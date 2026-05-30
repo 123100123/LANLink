@@ -6,17 +6,34 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 3 {
+	if len(os.Args) < 2 {
 		printUsage()
 		return
 	}
 
 	command := os.Args[1]
-	address := os.Args[2]
 
 	switch command {
 	case "health":
+		if len(os.Args) < 3 {
+			printUsage()
+			return
+		}
+
+		address := os.Args[2]
 		checkHealth(address)
+
+	case "pair":
+		if len(os.Args) < 4 {
+			printUsage()
+			return
+		}
+
+		address := os.Args[2]
+		token := os.Args[3]
+
+		pair(address, token)
+
 	default:
 		fmt.Println("Unknown command:", command)
 		printUsage()
@@ -26,4 +43,9 @@ func main() {
 func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  go run ./cli health <host:port>")
+	fmt.Println("  go run ./cli pair <host:port> <token>")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  go run ./cli health localhost:8787")
+	fmt.Println("  go run ./cli pair localhost:8787 123456")
 }
