@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+
+	"github.com/123100123/lanlink/protocol"
 )
 
 type DeviceStore struct {
@@ -49,4 +51,17 @@ func (s *DeviceStore) Save(path string) error {
 
 func (s *DeviceStore) AddDevice(device Device) {
 	s.Devices = append(s.Devices, device)
+}
+
+func (s *DeviceStore) PublicDevices() []protocol.DeviceInfo {
+	devices := make([]protocol.DeviceInfo, 0, len(s.Devices))
+
+	for _, device := range s.Devices {
+		devices = append(devices, protocol.DeviceInfo{
+			DeviceID:   device.DeviceID,
+			DeviceName: device.DeviceName,
+		})
+	}
+
+	return devices
 }

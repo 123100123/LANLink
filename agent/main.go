@@ -12,6 +12,7 @@ func main() {
 
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/pair", pairHandler)
+	http.HandleFunc("/devices", devicesHandler)
 
 	address := ":" + cfg.Port
 
