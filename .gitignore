@@ -1,34 +1,65 @@
-# Environment files
+# ==========================================
+# Environment Configuration
+# ==========================================
+
 .env
 .env.*
 
-# Keep template/example files
+# Keep template/example env files
 !.env.example
 
-# Go binaries
+
+# ==========================================
+# Runtime Data
+# ==========================================
+
+data/
+
+
+# ==========================================
+# Go Build Artifacts
+# ==========================================
+
+bin/
+build/
+dist/
+
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Build output
-bin/
-dist/
-build/
-
-# Go test output
 *.test
 *.out
 coverage.out
 
-# IDEs
+
+# ==========================================
+# IDEs & Editors
+# ==========================================
+
 .vscode/
 .idea/
 
-# OS files
+
+# ==========================================
+# Codex / AI Local Configuration
+# ==========================================
+
+.codex/
+
+
+# ==========================================
+# Operating System Files
+# ==========================================
+
 .DS_Store
 Thumbs.db
 
+
+# ==========================================
 # Logs
+# ==========================================
+
 *.log
