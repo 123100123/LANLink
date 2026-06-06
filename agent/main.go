@@ -13,7 +13,9 @@ func main() {
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/pair", pairHandler)
 	http.HandleFunc("/devices", devicesHandler)
+	http.HandleFunc("/ws", websocketHandler)
 
+	
 	address := ":" + cfg.Port
 
 	log.Println("LANLink agent listening on", address)

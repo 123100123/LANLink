@@ -6,6 +6,7 @@ type Message struct {
 	Module    string `json:"module,omitempty"`
 	Action    string `json:"action,omitempty"`
 	Timestamp int64  `json:"timestamp,omitempty"`
+	Payload   string `json:"payload,omitempty"`
 }
 
 type HealthResponse struct {
