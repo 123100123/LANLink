@@ -18,6 +18,12 @@ func devicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_, ok := authenticateRequest(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	deviceStore, err := store.Load(deviceStorePath)
 	if err != nil {
 		http.Error(

@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/123100123/lanlink/protocol"
+	"github.com/123100123/lanlink/internal/clientconfig"
 )
 
 func pair(address string, token string) {
@@ -45,7 +46,18 @@ func pair(address string, token string) {
 		return
 	}
 
+	creds := clientconfig.Credentials{
+		AgentAddress: address,
+		DeviceID:     pairResponse.DeviceID,
+		AuthToken:    pairResponse.AuthToken,
+	}
+
+	err = clientconfig.Save(creds)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	fmt.Println("Paired successfully")
 	fmt.Println("Device ID:", pairResponse.DeviceID)
-	fmt.Println("Auth token:", pairResponse.AuthToken)
+	fmt.Println("Credentials saved locally")
 }

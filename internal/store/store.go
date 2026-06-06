@@ -65,3 +65,13 @@ func (s *DeviceStore) PublicDevices() []protocol.DeviceInfo {
 
 	return devices
 }
+
+func (s *DeviceStore) FindDeviceByToken(authToken string) (*Device, bool) {
+	for _, device := range s.Devices {
+		if device.AuthToken == authToken {
+			return &device, true
+		}
+	}
+
+	return nil, false
+}
