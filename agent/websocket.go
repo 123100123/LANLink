@@ -31,6 +31,5 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("websocket authenticated:", device.DeviceID)
 
-	// Phase 4A stops here.
-	// Future phases will add a read loop here for ping, commands, media, etc.
+	handleWebSocketSession(conn, device)
 }
