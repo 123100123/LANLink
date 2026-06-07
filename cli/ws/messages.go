@@ -3,6 +3,7 @@ package ws
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/123100123/lanlink/protocol"
@@ -38,4 +39,63 @@ func sendHello(conn *websocket.Conn) {
 	fmt.Println("Type:", helloResponse.Type)
 	fmt.Println("ID:", helloResponse.ID)
 	fmt.Println("Payload:", string(helloResponse.Payload))
+}
+
+func SendDirectMessage(address string, parts []string) {
+	if len(parts) == 0 {
+		log.Fatal("message text is required")
+	}
+
+	text := strings.Join(parts, " ")
+
+	conn := ConnectAuthenticated(address)
+	defer conn.Close()
+
+	payload, err := protocol.EncodePayload(protocol.DirectMessagePayload{
+		Text: text,
+	})
+	if err != nil {
+		log.Fatal("failed to encode message payload:", err)
+	}
+
+	msg := protocol.Message{
+		Type:      "direct_message",
+		ID:        "msg_1",
+		Timestamp: time.Now().UnixMilli(),
+		Payload:   payload,
+	}
+
+	err = conn.WriteJSON(msg)
+	if err != nil {
+		log.Fatal("failed to send message:", err)
+	}
+
+	var response protocol.Message
+
+	err = conn.ReadJSON(&response)
+	if err != nil {
+		log.Fatal("failed to read response:", err)
+	}
+
+	err = conn.WriteMessage(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"),
+	)
+	if err != nil {
+		log.Println("failed to send close frame:", err)
+	}
+
+	if response.Type != "direct_message.response" {
+		log.Fatal("unexpected response:", response.Type)
+	}
+
+	var responsePayload protocol.DirectMessageResponse
+
+	err = protocol.DecodePayload(response.Payload, &responsePayload)
+	if err != nil {
+		log.Fatal("failed to decode response:", err)
+	}
+
+	fmt.Println("Message sent")
+	fmt.Println("Agent response:", responsePayload.Status)
 }

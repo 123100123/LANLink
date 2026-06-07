@@ -22,6 +22,16 @@ func RunSession(
 		)
 
 		if err != nil {
+			if websocket.IsCloseError(
+				err,
+				websocket.CloseNormalClosure,
+				websocket.CloseGoingAway,
+				websocket.CloseNoStatusReceived,
+				websocket.CloseAbnormalClosure,
+			) {
+				log.Println("websocket disconnected:", device.DeviceID)
+				return
+			}
 
 			log.Println(
 				"websocket read stopped for",
@@ -43,10 +53,13 @@ func RunSession(
 		switch msg.Type {
 		case "hello":
 			handleHello(conn, msg)
-		
+
 		case "ping":
 			handlePing(conn, msg)
-		
+
+		case "direct_message":
+			handleDirectMessage(conn, msg, device)
+
 		default:
 			writeError(conn, msg.ID, "unknown message type")
 		}

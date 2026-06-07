@@ -7,7 +7,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-
 func Connect(address string) {
 	conn := ConnectAuthenticated(address)
 	defer conn.Close()

@@ -3,6 +3,9 @@ package ws
 import (
 	"time"
 
+	"log"
+
+	"github.com/123100123/lanlink/internal/store"
 	"github.com/123100123/lanlink/protocol"
 	"github.com/gorilla/websocket"
 )
@@ -83,6 +86,35 @@ func handlePing(
 		ID:        msg.ID,
 		Timestamp: time.Now().UnixMilli(),
 		Payload:   payload,
+	}
+
+	conn.WriteJSON(response)
+}
+
+func handleDirectMessage(conn *websocket.Conn, msg protocol.Message, device *store.Device) {
+	var payload protocol.DirectMessagePayload
+
+	err := protocol.DecodePayload(msg.Payload, &payload)
+	if err != nil {
+		writeError(conn, msg.ID, "invalid direct message payload")
+		return
+	}
+
+	log.Println("direct message from", device.DeviceID+":", payload.Text)
+
+	responsePayload, err := protocol.EncodePayload(protocol.DirectMessageResponse{
+		Status: "received",
+	})
+	if err != nil {
+		writeError(conn, msg.ID, "failed to encode direct message response")
+		return
+	}
+
+	response := protocol.Message{
+		Type:      "direct_message.response",
+		ID:        msg.ID,
+		Timestamp: time.Now().UnixMilli(),
+		Payload:   responsePayload,
 	}
 
 	conn.WriteJSON(response)

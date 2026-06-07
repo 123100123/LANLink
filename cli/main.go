@@ -63,6 +63,17 @@ func main() {
 		address := os.Args[2]
 		Run(address)
 
+	case "message":
+		if len(os.Args) < 4 {
+			printUsage()
+			return
+		}
+
+		address := os.Args[2]
+		messageParts := os.Args[3:]
+
+		cliws.SendDirectMessage(address, messageParts)
+
 	default:
 		fmt.Println("Unknown command:", command)
 		printUsage()
@@ -76,6 +87,7 @@ func printUsage() {
 	fmt.Println("  go run ./cli devices <host:port>")
 	fmt.Println("  go run ./cli ws <host:port>")
 	fmt.Println("  go run ./cli ping <host:port>")
+	fmt.Println("  go run ./cli message <host:port> <text>")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  go run ./cli health localhost:8787")
@@ -83,4 +95,5 @@ func printUsage() {
 	fmt.Println("  go run ./cli devices localhost:8787")
 	fmt.Println("  go run ./cli ws localhost:8787")
 	fmt.Println("  go run ./cli ping localhost:8787")
+	fmt.Println(`  go run ./cli message localhost:8787 "hello from termux"`)
 }
