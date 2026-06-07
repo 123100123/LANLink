@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/123100123/lanlink/internal/paths"
 	"github.com/123100123/lanlink/internal/store"
 	"github.com/123100123/lanlink/protocol"
 )
@@ -24,7 +25,7 @@ func devicesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deviceStore, err := store.Load(deviceStorePath)
+	deviceStore, err := store.Load(paths.DeviceStorePath)
 	if err != nil {
 		http.Error(
 			w,

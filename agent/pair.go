@@ -5,12 +5,12 @@ import (
 	"net/http"
 
 	"github.com/123100123/lanlink/internal/auth"
+	"github.com/123100123/lanlink/internal/paths"
 	"github.com/123100123/lanlink/internal/store"
 	"github.com/123100123/lanlink/protocol"
 )
 
 const pairingToken = "123456"
-const deviceStorePath = "data/devices.json"
 
 func pairHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -73,7 +73,7 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 		AuthToken:  authToken,
 	}
 
-	deviceStore, err := store.Load(deviceStorePath)
+	deviceStore, err := store.Load(paths.DeviceStorePath)
 	if err != nil {
 		http.Error(
 			w,
@@ -85,7 +85,7 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 
 	deviceStore.AddDevice(device)
 
-	err = deviceStore.Save(deviceStorePath)
+	err = deviceStore.Save(paths.DeviceStorePath)
 	if err != nil {
 		http.Error(
 			w,

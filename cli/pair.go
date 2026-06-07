@@ -7,8 +7,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/123100123/lanlink/protocol"
 	"github.com/123100123/lanlink/internal/clientconfig"
+	"github.com/123100123/lanlink/protocol"
 )
 
 func pair(address string, token string) {

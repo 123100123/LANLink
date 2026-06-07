@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/123100123/lanlink/internal/paths"
 	"github.com/123100123/lanlink/internal/store"
 )
 
@@ -22,7 +23,7 @@ func authenticateRequest(r *http.Request) (*store.Device, bool) {
 
 	token := strings.TrimPrefix(header, prefix)
 
-	deviceStore, err := store.Load(deviceStorePath)
+	deviceStore, err := store.Load(paths.DeviceStorePath)
 	if err != nil {
 		return nil, false
 	}

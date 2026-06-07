@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	ws "github.com/123100123/lanlink/agent/ws"
 	"github.com/123100123/lanlink/internal/config"
 )
 
@@ -13,9 +14,8 @@ func main() {
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/pair", pairHandler)
 	http.HandleFunc("/devices", devicesHandler)
-	http.HandleFunc("/ws", websocketHandler)
+	http.HandleFunc("/ws", ws.Handler)
 
-	
 	address := ":" + cfg.Port
 
 	log.Println("LANLink agent listening on", address)

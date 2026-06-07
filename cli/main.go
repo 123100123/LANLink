@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	cliws "github.com/123100123/lanlink/cli/ws"
 )
 
 func main() {
@@ -42,7 +44,7 @@ func main() {
 
 		address := os.Args[2]
 		listDevices(address)
-	
+
 	case "ws":
 		if len(os.Args) < 3 {
 			printUsage()
@@ -50,7 +52,7 @@ func main() {
 		}
 
 		address := os.Args[2]
-		websocketHello(address)
+		cliws.Connect(address)
 
 	default:
 		fmt.Println("Unknown command:", command)
