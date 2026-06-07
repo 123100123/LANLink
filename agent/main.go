@@ -6,6 +6,8 @@ import (
 
 	ws "github.com/123100123/lanlink/agent/ws"
 	"github.com/123100123/lanlink/internal/config"
+
+	"github.com/123100123/lanlink/internal/network"
 )
 
 func main() {
@@ -19,8 +21,23 @@ func main() {
 	address := ":" + cfg.Port
 
 	log.Println("LANLink agent listening on", address)
-
-	err := http.ListenAndServe(address, nil)
+	
+	ips, err := network.GetLocalIPs()
+	if err == nil {
+	
+		log.Println("")
+		log.Println("Available addresses:")
+	
+		log.Println("127.0.0.1:" + cfg.Port)
+	
+		for _, ip := range ips {
+			log.Println(ip + ":" + cfg.Port)
+		}
+	
+		log.Println("")
+	}
+	
+	err = http.ListenAndServe(address, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
