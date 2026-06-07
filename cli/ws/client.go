@@ -7,7 +7,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+
 func Connect(address string) {
+	conn := ConnectAuthenticated(address)
+	defer conn.Close()
+
+	sendHello(conn)
+}
+
+func ConnectAuthenticated(address string) *websocket.Conn {
 	url := "ws://" + address + "/ws"
 
 	creds, err := clientconfig.Load()
@@ -19,9 +27,8 @@ func Connect(address string) {
 	if err != nil {
 		log.Fatal("websocket connection failed:", err)
 	}
-	defer conn.Close()
 
 	authenticate(conn, creds.AuthToken)
 
-	sendHello(conn)
+	return conn
 }

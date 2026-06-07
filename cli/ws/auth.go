@@ -20,7 +20,7 @@ func authenticate(conn *websocket.Conn, authToken string) {
 	authMessage := protocol.Message{
 		Type:      "auth",
 		ID:        "auth_1",
-		Timestamp: time.Now().Unix(),
+		Timestamp: time.Now().UnixMilli(),
 		Payload:   authPayload,
 	}
 

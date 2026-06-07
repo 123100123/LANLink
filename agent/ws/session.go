@@ -41,19 +41,14 @@ func RunSession(
 		)
 
 		switch msg.Type {
-
 		case "hello":
-			handleHello(
-				conn,
-				msg,
-			)
-
+			handleHello(conn, msg)
+		
+		case "ping":
+			handlePing(conn, msg)
+		
 		default:
-			writeError(
-				conn,
-				msg.ID,
-				"unknown message type",
-			)
+			writeError(conn, msg.ID, "unknown message type")
 		}
 	}
 }

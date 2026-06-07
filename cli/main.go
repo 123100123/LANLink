@@ -54,6 +54,15 @@ func main() {
 		address := os.Args[2]
 		cliws.Connect(address)
 
+	case "ping":
+		if len(os.Args) < 3 {
+			printUsage()
+			return
+		}
+
+		address := os.Args[2]
+		Run(address)
+
 	default:
 		fmt.Println("Unknown command:", command)
 		printUsage()
@@ -66,10 +75,12 @@ func printUsage() {
 	fmt.Println("  go run ./cli pair <host:port> <token>")
 	fmt.Println("  go run ./cli devices <host:port>")
 	fmt.Println("  go run ./cli ws <host:port>")
+	fmt.Println("  go run ./cli ping <host:port>")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  go run ./cli health localhost:8787")
 	fmt.Println("  go run ./cli pair localhost:8787 123456")
 	fmt.Println("  go run ./cli devices localhost:8787")
 	fmt.Println("  go run ./cli ws localhost:8787")
+	fmt.Println("  go run ./cli ping localhost:8787")
 }

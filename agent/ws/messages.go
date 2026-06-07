@@ -53,3 +53,37 @@ func writeError(
 
 	conn.WriteJSON(response)
 }
+
+func handlePing(
+	conn *websocket.Conn,
+	msg protocol.Message,
+) {
+	var ping protocol.PingPayload
+
+	err := protocol.DecodePayload(msg.Payload, &ping)
+	if err != nil {
+		writeError(conn, msg.ID, "invalid ping payload")
+		return
+	}
+
+	payload, err := protocol.EncodePayload(
+		protocol.PongPayload{
+			SentAt:     ping.SentAt,
+			ReceivedAt: time.Now().UnixMilli(),
+		},
+	)
+
+	if err != nil {
+		writeError(conn, msg.ID, "failed to encode pong payload")
+		return
+	}
+
+	response := protocol.Message{
+		Type:      "pong",
+		ID:        msg.ID,
+		Timestamp: time.Now().UnixMilli(),
+		Payload:   payload,
+	}
+
+	conn.WriteJSON(response)
+}
