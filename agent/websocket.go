@@ -3,9 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
-	"time"
 
-	"github.com/123100123/lanlink/protocol"
 	"github.com/gorilla/websocket"
 )
 
@@ -25,28 +23,14 @@ func websocketHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Println("websocket client connected")
 
-	var msg protocol.Message
-
-	err = conn.ReadJSON(&msg)
-	if err != nil {
-		log.Println("failed to read websocket message:", err)
+	device, ok := authenticateWebSocket(conn)
+	if !ok {
+		log.Println("websocket authentication failed")
 		return
 	}
 
-	log.Println("received websocket message:", msg.Type)
+	log.Println("websocket authenticated:", device.DeviceID)
 
-	response := protocol.Message{
-		Type:      "hello.response",
-		ID:        msg.ID,
-		Timestamp: time.Now().Unix(),
-		Payload:   "hello from lanlink agent",
-	}
-
-	err = conn.WriteJSON(response)
-	if err != nil {
-		log.Println("failed to write websocket response:", err)
-		return
-	}
-
-	log.Println("websocket response sent")
+	// Phase 4A stops here.
+	// Future phases will add a read loop here for ping, commands, media, etc.
 }
