@@ -1,10 +1,10 @@
 # LANLink
 
-LANLink is a local network device-control framework written in Go.
+LANLink is a local network communication framework written in Go.
 
 It enables trusted devices to pair, authenticate, and communicate over a LAN, Wi-Fi network, or mobile hotspot using a custom JSON protocol over WebSockets.
 
-The project is designed as a learning-focused networking platform and a foundation for future device control features such as file sharing, media control, and mobile applications.
+The project is designed as a learning-focused networking platform and a foundation for building secure local device-to-device communication systems.
 
 ---
 
@@ -18,17 +18,20 @@ The project is designed as a learning-focused networking platform and a foundati
 * Authenticated WebSocket sessions
 * Ping/Pong latency measurement
 * Direct messaging
+* Small file transfer
+* Chunked large-file transfer
+* Upload progress tracking
+* Safe file storage with overwrite protection
 * Persistent device storage
 * Automatic LAN address detection
 
 ### Planned
 
-* File transfer
-* Media control
-* Volume control
-* LAN discovery
-* React Native mobile client
 * Reliability and reconnect logic
+* LAN discovery
+* Device management
+* React Native mobile client
+* Advanced security features
 
 ---
 
@@ -46,8 +49,7 @@ Linux Agent
       ├── Ping/Pong
       ├── Direct Messages
       ├── File Transfer
-      ├── Media Control
-      └── Volume Control
+      └── Future Modules
 ```
 
 ---
@@ -89,6 +91,18 @@ go run ./cli ping 192.168.1.42:8787
 go run ./cli message 192.168.1.42:8787 "hello from termux"
 ```
 
+### Transfer Small Files
+
+```bash
+go run ./cli send-file 192.168.1.42:8787 ./test.txt
+```
+
+### Transfer Large Files
+
+```bash
+go run ./cli send-file-chunked 192.168.1.42:8787 ./large.zip
+```
+
 ---
 
 ## Repository Structure
@@ -110,10 +124,8 @@ lanlink/
 Current version:
 
 ```text
-v0.2.0
+v0.3.0
 ```
-
----
 
 ## License
 
