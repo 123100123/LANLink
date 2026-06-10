@@ -39,7 +39,7 @@ func sendFileChunked(address string, filePath string) {
 	defer conn.Close()
 
 	sendFileStart(conn, transferID, filepath.Base(filePath), info.Size())
-	sendFileChunks(conn, transferID, file)
+	sendFileChunks(conn, transferID, file, info.Size())
 	result := sendFileEnd(conn, transferID)
 
 	fmt.Println("Chunked file upload complete")
@@ -88,9 +88,11 @@ func sendFileChunks(
 	},
 	transferID string,
 	file *os.File,
+	totalSize int64,
 ) {
 	buffer := make([]byte, chunkSize)
 	index := 0
+	var sent int64
 
 	for {
 		n, err := file.Read(buffer)
@@ -130,8 +132,13 @@ func sendFileChunks(
 
 		expectChunkResponse(conn, msg.ID)
 
+		sent += int64(n)
+		printProgress(sent, totalSize)
+
 		index++
 	}
+
+	fmt.Println()
 }
 
 func sendFileEnd(
@@ -198,4 +205,20 @@ func expectChunkResponse(
 	}
 
 	return result
+}
+
+func printProgress(sent int64, total int64) {
+	if total <= 0 {
+		fmt.Printf("\rSent %d bytes", sent)
+		return
+	}
+
+	percent := float64(sent) / float64(total) * 100
+
+	fmt.Printf(
+		"\rUploading: %.2f%% (%d/%d bytes)",
+		percent,
+		sent,
+		total,
+	)
 }

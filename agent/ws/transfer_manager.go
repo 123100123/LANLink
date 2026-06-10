@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"strconv"
 )
 
 type ActiveTransfer struct {
@@ -48,7 +49,7 @@ func (m *TransferManager) Start(
 	}
 
 	tempPath := filepath.Join("received", "tmp", transferID+"_"+safeName)
-	finalPath := filepath.Join("received", safeName)
+	finalPath := uniquePath("received", safeName)
 
 	file, err := os.Create(tempPath)
 	if err != nil {
@@ -105,4 +106,26 @@ func (m *TransferManager) Cancel(transferID string) {
 	os.Remove(transfer.TempPath)
 
 	delete(m.transfers, transferID)
+}
+
+func uniquePath(dir string, filename string) string {
+	ext := filepath.Ext(filename)
+	base := filename[:len(filename)-len(ext)]
+
+	path := filepath.Join(dir, filename)
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return path
+	}
+
+	for i := 1; ; i++ {
+		candidate := filepath.Join(
+			dir,
+			base+"_"+strconv.Itoa(i)+ext,
+		)
+
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate
+		}
+	}
 }
