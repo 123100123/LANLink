@@ -88,6 +88,17 @@ func main() {
 			filePath,
 		)
 
+	case "send-file-chunked":
+		if len(os.Args) < 4 {
+			printUsage()
+			return
+		}
+
+		address := os.Args[2]
+		filePath := os.Args[3]
+
+		sendFileChunked(address, filePath)
+		
 	default:
 		fmt.Println("Unknown command:", command)
 		printUsage()

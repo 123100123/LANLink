@@ -61,10 +61,16 @@ func RunSession(
 			handleDirectMessage(conn, msg, device)
 		
 		case "file.send":
-			handleFileSend(
-				conn,
-				msg,
-			)
+			handleFileSend(conn,msg)
+		
+		case "file.start":
+			handleFileStart(conn, msg)
+
+		case "file.chunk":
+			handleFileChunk(conn, msg)
+		
+		case "file.end":
+			handleFileEnd(conn, msg)
 
 		default:
 			writeError(conn, msg.ID, "unknown message type")

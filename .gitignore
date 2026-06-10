@@ -64,6 +64,6 @@ Thumbs.db
 
 *.log
 
-recieved/
-
+received/
+.agents/
 test.*
