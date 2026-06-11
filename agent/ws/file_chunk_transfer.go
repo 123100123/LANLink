@@ -74,14 +74,19 @@ func handleFileChunk(conn *websocket.Conn, msg protocol.Message) {
 		return
 	}
 
+	transfer.mu.Lock()
+
 	_, err = transfer.File.Write(data)
 	if err != nil {
+		transfer.mu.Unlock()
 		transferManager.Cancel(payload.TransferID)
 		writeError(conn, msg.ID, "failed to write chunk")
 		return
 	}
 
 	transfer.Received += int64(len(data))
+
+	transfer.mu.Unlock()
 
 	writeFileChunkResponse(
 		conn,
@@ -108,18 +113,21 @@ func handleFileEnd(conn *websocket.Conn, msg protocol.Message) {
 		return
 	}
 
+	transfer.mu.Lock()
+	defer transfer.mu.Unlock()
+	
 	err = transfer.File.Close()
 	if err != nil {
 		writeError(conn, msg.ID, "failed to close file")
 		return
 	}
-
+	
 	if transfer.Size != transfer.Received {
 		os.Remove(transfer.TempPath)
 		writeError(conn, msg.ID, "file size mismatch")
 		return
 	}
-
+	
 	err = os.Rename(transfer.TempPath, transfer.FinalPath)
 	if err != nil {
 		os.Remove(transfer.TempPath)

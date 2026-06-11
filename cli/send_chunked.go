@@ -38,8 +38,10 @@ func sendFileChunked(address string, filePath string) {
 	conn := cliws.ConnectAuthenticated(address)
 	defer conn.Close()
 
+	startTime := time.Now()
+
 	sendFileStart(conn, transferID, filepath.Base(filePath), info.Size())
-	sendFileChunks(conn, transferID, file, info.Size())
+	sendFileChunks(conn, transferID, file, info.Size(), startTime)
 	result := sendFileEnd(conn, transferID)
 
 	fmt.Println("Chunked file upload complete")
@@ -89,6 +91,7 @@ func sendFileChunks(
 	transferID string,
 	file *os.File,
 	totalSize int64,
+	startTime time.Time,
 ) {
 	buffer := make([]byte, chunkSize)
 	index := 0
@@ -133,7 +136,12 @@ func sendFileChunks(
 		expectChunkResponse(conn, msg.ID)
 
 		sent += int64(n)
-		printProgress(sent, totalSize)
+
+		printProgress(
+			sent,
+			totalSize,
+			startTime,
+		)
 
 		index++
 	}
@@ -207,18 +215,90 @@ func expectChunkResponse(
 	return result
 }
 
-func printProgress(sent int64, total int64) {
+func printProgress(
+	sent int64,
+	total int64,
+	startTime time.Time,
+) {
+	elapsed := time.Since(startTime).Seconds()
+	if elapsed <= 0 {
+		elapsed = 0.001
+	}
+
+	speedMBps := (float64(sent) / 1024 / 1024) / elapsed
+
+	eta := "unknown"
+
+	if total > 0 && speedMBps > 0 {
+		remainingBytes := total - sent
+		etaSeconds := float64(remainingBytes) / (speedMBps * 1024 * 1024)
+		eta = formatDuration(etaSeconds)
+	}
+
 	if total <= 0 {
-		fmt.Printf("\rSent %d bytes", sent)
+		fmt.Printf(
+			"\r%s sent | %.2f MB/s | ETA %s",
+			formatBytes(sent),
+			speedMBps,
+			eta,
+		)
 		return
 	}
 
 	percent := float64(sent) / float64(total) * 100
 
 	fmt.Printf(
-		"\rUploading: %.2f%% (%d/%d bytes)",
+		"\r%.2f%% | %s / %s | %.2f MB/s | ETA %s",
 		percent,
-		sent,
-		total,
+		formatBytes(sent),
+		formatBytes(total),
+		speedMBps,
+		eta,
 	)
+}
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+
+	div := int64(unit)
+	exp := 0
+
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+
+	units := []string{
+		"KB",
+		"MB",
+		"GB",
+		"TB",
+	}
+
+	return fmt.Sprintf(
+		"%.2f %s",
+		float64(bytes)/float64(div),
+		units[exp],
+	)
+}
+
+func formatDuration(seconds float64) string {
+	if seconds < 1 {
+		return "<1s"
+	}
+
+	total := int(seconds)
+
+	minutes := total / 60
+	remainingSeconds := total % 60
+
+	if minutes == 0 {
+		return fmt.Sprintf("%ds", remainingSeconds)
+	}
+
+	return fmt.Sprintf("%dm%ds", minutes, remainingSeconds)
 }
