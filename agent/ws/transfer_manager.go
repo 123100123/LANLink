@@ -3,8 +3,8 @@ package ws
 import (
 	"os"
 	"path/filepath"
-	"sync"
 	"strconv"
+	"sync"
 )
 
 type ActiveTransfer struct {
@@ -15,6 +15,7 @@ type ActiveTransfer struct {
 	File       *os.File
 	Size       int64
 	Received   int64
+	mu         sync.Mutex
 }
 
 type TransferManager struct {
@@ -48,8 +49,8 @@ func (m *TransferManager) Start(
 		return nil, err
 	}
 
-	tempPath := filepath.Join("received", "tmp", transferID+"_"+safeName)
 	finalPath := uniquePath("received", safeName)
+	tempPath := filepath.Join("received", "tmp", transferID+"_"+safeName)
 
 	file, err := os.Create(tempPath)
 	if err != nil {
@@ -95,17 +96,21 @@ func (m *TransferManager) Finish(transferID string) (*ActiveTransfer, bool) {
 
 func (m *TransferManager) Cancel(transferID string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	transfer, ok := m.transfers[transferID]
+	if ok {
+		delete(m.transfers, transferID)
+	}
+	m.mu.Unlock()
+
 	if !ok {
 		return
 	}
 
+	transfer.mu.Lock()
+	defer transfer.mu.Unlock()
+
 	transfer.File.Close()
 	os.Remove(transfer.TempPath)
-
-	delete(m.transfers, transferID)
 }
 
 func uniquePath(dir string, filename string) string {

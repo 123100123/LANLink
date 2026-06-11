@@ -67,3 +67,4 @@ Thumbs.db
 received/
 .agents/
 test.*
+*.bin

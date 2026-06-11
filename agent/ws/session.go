@@ -60,9 +60,6 @@ func RunSession(
 		case "direct_message":
 			handleDirectMessage(conn, msg, device)
 		
-		case "file.send":
-			handleFileSend(conn,msg)
-		
 		case "file.start":
 			handleFileStart(conn, msg)
 
