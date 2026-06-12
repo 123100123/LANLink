@@ -6,6 +6,7 @@ import { useSessionStore } from "@/store/sessionStore";
 export default function Index() {
   const hydrated = useSessionStore((state) => state.hydrated);
   const hasCredentials = useSessionStore((state) => state.hasCredentials);
+  const credentials = useSessionStore((state) => state.credentials);
 
   if (!hydrated) {
     return (
@@ -16,7 +17,11 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={hasCredentials ? "/(tabs)/home" : "/setup"} />;
+  if (!hasCredentials || !credentials?.deviceId) {
+    return <Redirect href="/setup" />;
+  }
+
+  return <Redirect href={`/(tabs)/devices/${credentials.deviceId}`} />;
 }
 
 const styles = StyleSheet.create({

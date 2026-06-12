@@ -34,11 +34,13 @@ export default function SetupScreen() {
     setAddress(agentAddress);
   }, [agentAddress]);
 
+  const credentials = useSessionStore((state) => state.credentials);
+
   useEffect(() => {
-    if (hydrated && hasCredentials) {
-      router.replace("/(tabs)/home");
+    if (hydrated && hasCredentials && credentials?.deviceId) {
+      router.replace(`/(tabs)/devices/${credentials.deviceId}`);
     }
-  }, [hydrated, hasCredentials, router]);
+  }, [hydrated, hasCredentials, credentials?.deviceId, router]);
 
   const normalizedAddress = useMemo(() => address.trim(), [address]);
 
