@@ -57,6 +57,20 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen
+        name="transfers"
+        options={{
+          title: "Transfers",
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "swap-horizontal" : "swap-horizontal-outline"}
+              color={color}
+              size={size}
+            />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",

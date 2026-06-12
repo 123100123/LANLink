@@ -31,7 +31,6 @@ export default function RootLayout() {
       .catch((err) => {
         console.error("[App] Hydrate failed:", err);
         setError(err);
-        // Still mark as hydrated even if loading fails
         useSessionStore.setState({ hydrated: true });
       });
   }, [hydrate]);

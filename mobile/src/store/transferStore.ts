@@ -1,23 +1,47 @@
 import { create } from "zustand";
 
-type TransferState = {
-  currentTransferId: string | null;
+export type TransferStatus = "uploading" | "completed" | "failed";
+
+export type TransferItem = {
+  id: string;
+  filename: string;
+  size?: number;
+  sentBytes: number;
   progress: number;
-  status: string;
-  error: string | null;
-  setTransfer: (transferId: string | null) => void;
-  setProgress: (progress: number) => void;
-  setStatus: (status: string) => void;
-  setError: (error: string | null) => void;
+  status: TransferStatus;
+  startedAt: number;
+  completedAt?: number;
+  error?: string;
+  savedPath?: string;
 };
 
-export const useTransferStore = create<TransferState>((set) => ({
-  currentTransferId: null,
-  progress: 0,
-  status: "idle",
-  error: null,
-  setTransfer: (currentTransferId) => set({ currentTransferId }),
-  setProgress: (progress) => set({ progress }),
-  setStatus: (status) => set({ status }),
-  setError: (error) => set({ error }),
+type TransferStore = {
+  transfers: TransferItem[];
+  addTransfer: (transfer: TransferItem) => void;
+  updateTransfer: (
+    id: string,
+    patch: Partial<Omit<TransferItem, "id">>
+  ) => void;
+  clearTransfers: () => void;
+};
+
+export const useTransferStore = create<TransferStore>((set) => ({
+  transfers: [],
+
+  addTransfer: (transfer) =>
+    set((state) => ({
+      transfers: [transfer, ...state.transfers],
+    })),
+
+  updateTransfer: (id, patch) =>
+    set((state) => ({
+      transfers: state.transfers.map((transfer) =>
+        transfer.id === id ? { ...transfer, ...patch } : transfer
+      ),
+    })),
+
+  clearTransfers: () =>
+    set({
+      transfers: [],
+    }),
 }));

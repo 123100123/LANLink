@@ -17,6 +17,9 @@ import { useSocket } from "@/hooks/useSocket";
 import { useSessionStore } from "@/store/sessionStore";
 import { uploadFile } from "@/lib/transfer/uploader";
 
+import { createId } from "@/lib/protocol/envelope";
+import { useTransferStore } from "@/store/transferStore";
+
 export default function DeviceDetailScreen() {
   const { deviceId } = useLocalSearchParams<{ deviceId: string }>();
   const devices = useDevicesQuery();
@@ -25,6 +28,9 @@ export default function DeviceDetailScreen() {
   const socket = useSocket();
   const ping = usePing();
   const device = devices.data?.devices.find((item) => item.device_id === deviceId);
+
+  const addTransfer = useTransferStore((state) => state.addTransfer);
+  const updateTransfer = useTransferStore((state) => state.updateTransfer);
 
   const [message, setMessage] = useState("");
   const [sendStatus, setSendStatus] = useState("");
@@ -66,24 +72,76 @@ export default function DeviceDetailScreen() {
   async function handlePickAndUpload() {
     setBusy(true);
     setFileStatus("Picking file...");
+
+    let transferId = "";
+
     try {
-      const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
+      const result = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
       if (result.canceled) {
         setFileStatus("File selection canceled");
         return;
       }
 
       const file = result.assets[0];
+      transferId = createId("transfer");
+
+      addTransfer({
+        id: transferId,
+        filename: file.name ?? "unknown file",
+        size: file.size,
+        sentBytes: 0,
+        progress: 0,
+        status: "uploading",
+        startedAt: Date.now(),
+      });
+
       await connectIfNeeded();
-      const response = await uploadFile(socket, file);
+
+      const response = await uploadFile(socket, file, {
+        transferId,
+        onProgress: ({ sentBytes, totalBytes, progress }) => {
+          updateTransfer(transferId, {
+            sentBytes,
+            size: totalBytes,
+            progress,
+            status: "uploading",
+          });
+
+          setFileStatus(`Uploading ${Math.round(progress * 100)}%`);
+        },
+      });
+
+      updateTransfer(transferId, {
+        sentBytes: file.size ?? 0,
+        progress: 1,
+        status: "completed",
+        completedAt: Date.now(),
+        savedPath: response.path,
+      });
+
       setFileStatus(`Saved as ${response.path ?? "unknown path"}`);
     } catch (error) {
-      setFileStatus(error instanceof Error ? error.message : "Upload failed");
+      const message =
+        error instanceof Error ? error.message : "Upload failed";
+
+      if (transferId) {
+        updateTransfer(transferId, {
+          status: "failed",
+          error: message,
+          completedAt: Date.now(),
+        });
+      }
+
+      setFileStatus(message);
     } finally {
       setBusy(false);
     }
   }
-
+  
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>{device?.device_name ?? "Device"}</Text>
