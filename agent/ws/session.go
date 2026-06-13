@@ -4,23 +4,21 @@ import (
 	"log"
 
 	"github.com/123100123/lanlink/internal/store"
+	"github.com/123100123/lanlink/internal/wsutil"
 	"github.com/123100123/lanlink/protocol"
 	"github.com/gorilla/websocket"
 )
 
 func RunSession(
-	conn *websocket.Conn,
+	rawConn *websocket.Conn,
 	device *store.Device,
 ) {
+	conn := wsutil.NewSafeConn(rawConn)
 
 	for {
-
 		var msg protocol.Message
 
-		err := conn.ReadJSON(
-			&msg,
-		)
-
+		err := conn.ReadJSON(&msg)
 		if err != nil {
 			if websocket.IsCloseError(
 				err,
@@ -59,13 +57,13 @@ func RunSession(
 
 		case "direct_message":
 			handleDirectMessage(conn, msg, device)
-		
+
 		case "file.start":
 			handleFileStart(conn, msg)
 
 		case "file.chunk":
-			handleFileChunk(conn, msg)
-		
+			go handleFileChunk(conn, msg)
+
 		case "file.end":
 			handleFileEnd(conn, msg)
 
