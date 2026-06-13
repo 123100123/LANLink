@@ -1,18 +1,21 @@
 package main
 
 import (
-	"encoding/base64"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
-	cliws "github.com/123100123/lanlink/cli/ws"
 	"github.com/123100123/lanlink/internal/auth"
+	"github.com/123100123/lanlink/internal/clientconfig"
 	"github.com/123100123/lanlink/internal/config"
-	"github.com/123100123/lanlink/internal/wsutil"
 	"github.com/123100123/lanlink/protocol"
 )
 
@@ -20,11 +23,19 @@ type chunkJob struct {
 	Index  int
 	Offset int64
 	Data   []byte
-	MsgID  string
+}
+
+type chunkResult struct {
+	Bytes int
 }
 
 func sendFile(address string, filePath string) {
 	cfg := config.Load()
+
+	creds, err := clientconfig.Load()
+	if err != nil {
+		log.Fatal("not paired yet, run pair command first")
+	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -43,23 +54,24 @@ func sendFile(address string, filePath string) {
 	}
 
 	transferID := "transfer_" + transferRawID
-
-	rawConn := cliws.ConnectAuthenticated(address)
-	defer rawConn.Close()
-
-	conn := wsutil.NewSafeConn(rawConn)
+	baseURL := "http://" + address
+	client := newTransferHTTPClient(cfg.TransferMaxInFlightChunks)
 
 	startTime := time.Now()
 
-	sendFileStart(
-		conn,
+	startTransferHTTP(
+		client,
+		baseURL,
+		creds.AuthToken,
 		transferID,
 		filepath.Base(filePath),
 		info.Size(),
 	)
 
-	sendFileChunksPipelined(
-		conn,
+	sendFileChunksHTTP(
+		client,
+		baseURL,
+		creds.AuthToken,
 		transferID,
 		file,
 		info.Size(),
@@ -68,238 +80,302 @@ func sendFile(address string, filePath string) {
 		cfg.TransferMaxInFlightChunks,
 	)
 
-	result := sendFileEnd(conn, transferID)
+	result := finishTransferHTTP(
+		client,
+		baseURL,
+		creds.AuthToken,
+		transferID,
+	)
 
-	fmt.Println("Chunked file upload complete")
+	fmt.Println("HTTP file upload complete")
 	fmt.Println("Saved as:", result.Path)
 }
 
-func sendFileStart(
-	conn *wsutil.SafeConn,
+func newTransferHTTPClient(maxWorkers int) *http.Client {
+	if maxWorkers <= 0 {
+		maxWorkers = 1
+	}
+
+	return &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConns:        maxWorkers * 2,
+			MaxIdleConnsPerHost: maxWorkers * 2,
+			MaxConnsPerHost:     maxWorkers,
+		},
+	}
+}
+
+func startTransferHTTP(
+	client *http.Client,
+	baseURL string,
+	authToken string,
 	transferID string,
 	filename string,
 	size int64,
 ) {
-	payload, err := protocol.EncodePayload(
-		protocol.FileStartPayload{
-			TransferID: transferID,
-			Filename:   filename,
-			Size:       size,
-		},
+	body, err := json.Marshal(protocol.TransferStartRequest{
+		TransferID: transferID,
+		Filename:   filename,
+		Size:       size,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		baseURL+"/transfers/start",
+		bytes.NewReader(body),
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	msg := protocol.Message{
-		Type:      "file.start",
-		ID:        "file_start_1",
-		Timestamp: time.Now().UnixMilli(),
-		Payload:   payload,
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal("failed to start transfer:", err)
+	}
+	defer resp.Body.Close()
+
+	var result protocol.TransferStartResponse
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Fatal("failed to decode transfer start response:", err)
 	}
 
-	if err := conn.WriteJSON(msg); err != nil {
-		log.Fatal("failed to send file.start:", err)
+	if resp.StatusCode != http.StatusOK {
+		log.Fatal("failed to start transfer:", result.Error)
 	}
-
-	expectChunkResponse(conn, msg.ID)
 }
 
-func sendFileChunksPipelined(
-	conn *wsutil.SafeConn,
+func sendFileChunksHTTP(
+	client *http.Client,
+	baseURL string,
+	authToken string,
 	transferID string,
 	file *os.File,
 	totalSize int64,
 	startTime time.Time,
 	chunkSize int,
-	maxInFlightChunks int,
+	maxWorkers int,
 ) {
-	inFlight := 0
-	nextIndex := 0
-	nextOffset := int64(0)
-	eof := false
-	ackedBytes := int64(0)
+	if chunkSize <= 0 {
+		log.Fatal("TRANSFER_CHUNK_SIZE must be greater than zero")
+	}
 
-	for !eof || inFlight > 0 {
-		for !eof && inFlight < maxInFlightChunks {
-			job, ok := readNextChunk(
-				file,
-				nextIndex,
-				nextOffset,
-				chunkSize,
-			)
+	if maxWorkers <= 0 {
+		log.Fatal("TRANSFER_MAX_IN_FLIGHT_CHUNKS must be greater than zero")
+	}
+
+	totalChunks := int((totalSize + int64(chunkSize) - 1) / int64(chunkSize))
+	if totalChunks == 0 {
+		fmt.Println()
+		return
+	}
+
+	jobs := make(chan chunkJob, maxWorkers)
+	results := make(chan chunkResult, maxWorkers)
+	errs := make(chan error, 1)
+
+	var workerWG sync.WaitGroup
+
+	for workerID := 0; workerID < maxWorkers; workerID++ {
+		workerWG.Add(1)
+
+		go func() {
+			defer workerWG.Done()
+
+			for job := range jobs {
+				err := uploadChunkHTTP(
+					client,
+					baseURL,
+					authToken,
+					transferID,
+					job,
+				)
+				if err != nil {
+					reportTransferError(errs, err)
+					return
+				}
+
+				results <- chunkResult{
+					Bytes: len(job.Data),
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+
+		index := 0
+		offset := int64(0)
+
+		for {
+			buffer := make([]byte, chunkSize)
+
+			n, err := file.Read(buffer)
+			if err != nil && err != io.EOF {
+				reportTransferError(errs, err)
+				return
+			}
+
+			if n == 0 {
+				return
+			}
+
+			jobs <- chunkJob{
+				Index:  index,
+				Offset: offset,
+				Data:   buffer[:n],
+			}
+
+			index++
+			offset += int64(n)
+		}
+	}()
+
+	go func() {
+		workerWG.Wait()
+		close(results)
+	}()
+
+	acknowledgedChunks := 0
+	acknowledgedBytes := int64(0)
+
+	for acknowledgedChunks < totalChunks {
+		select {
+		case err := <-errs:
+			log.Fatal("file upload failed:", err)
+
+		case result, ok := <-results:
 			if !ok {
-				eof = true
-				break
+				log.Fatal("file upload stopped before all chunks were acknowledged")
 			}
 
-			if err := sendFileChunk(conn, transferID, job); err != nil {
-				log.Fatal("failed to send file.chunk:", err)
-			}
+			acknowledgedChunks++
+			acknowledgedBytes += int64(result.Bytes)
 
-			inFlight++
-			nextIndex++
-			nextOffset += int64(len(job.Data))
+			printProgress(
+				acknowledgedBytes,
+				totalSize,
+				startTime,
+			)
 		}
-
-		response := expectAnyChunkResponse(conn)
-
-		if response.Status != "chunk.received" &&
-			response.Status != "chunk.duplicate" {
-			log.Fatal("unexpected chunk status:", response.Status)
-		}
-
-		inFlight--
-
-		if response.Received > ackedBytes {
-			ackedBytes = response.Received
-		}
-
-		printProgress(ackedBytes, totalSize, startTime)
 	}
 
 	fmt.Println()
 }
 
-func readNextChunk(
-	file *os.File,
-	index int,
-	offset int64,
-	chunkSize int,
-) (chunkJob, bool) {
-	buffer := make([]byte, chunkSize)
-
-	n, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
-		log.Fatal(err)
-	}
-
-	if n == 0 {
-		return chunkJob{}, false
-	}
-
-	return chunkJob{
-		Index:  index,
-		Offset: offset,
-		Data:   buffer[:n],
-		MsgID:  fmt.Sprintf("file_chunk_%d", index),
-	}, true
-}
-
-func sendFileChunk(
-	conn *wsutil.SafeConn,
+func uploadChunkHTTP(
+	client *http.Client,
+	baseURL string,
+	authToken string,
 	transferID string,
 	job chunkJob,
 ) error {
-	content := base64.StdEncoding.EncodeToString(job.Data)
+	chunkURL := fmt.Sprintf(
+		"%s/transfers/%s/chunks/%d?offset=%d",
+		baseURL,
+		url.PathEscape(transferID),
+		job.Index,
+		job.Offset,
+	)
 
-	payload, err := protocol.EncodePayload(
-		protocol.FileChunkPayload{
-			TransferID: transferID,
-			Index:      job.Index,
-			Offset:     job.Offset,
-			Length:     len(job.Data),
-			Content:    content,
-		},
+	req, err := http.NewRequest(
+		http.MethodPut,
+		chunkURL,
+		bytes.NewReader(job.Data),
 	)
 	if err != nil {
 		return err
 	}
 
-	msg := protocol.Message{
-		Type:      "file.chunk",
-		ID:        job.MsgID,
-		Timestamp: time.Now().UnixMilli(),
-		Payload:   payload,
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result protocol.TransferChunkResponse
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode chunk response: %w", err)
 	}
 
-	return conn.WriteJSON(msg)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf(
+			"chunk %d failed: %s",
+			job.Index,
+			result.Error,
+		)
+	}
+
+	if result.Status != "chunk.received" &&
+		result.Status != "chunk.duplicate" {
+		return fmt.Errorf(
+			"chunk %d returned unexpected status: %s",
+			job.Index,
+			result.Status,
+		)
+	}
+
+	return nil
 }
 
-func sendFileEnd(
-	conn *wsutil.SafeConn,
+func finishTransferHTTP(
+	client *http.Client,
+	baseURL string,
+	authToken string,
 	transferID string,
-) protocol.FileChunkResponse {
-	payload, err := protocol.EncodePayload(
-		protocol.FileEndPayload{
-			TransferID: transferID,
-		},
+) protocol.TransferFinishResponse {
+	finishURL := fmt.Sprintf(
+		"%s/transfers/%s/finish",
+		baseURL,
+		url.PathEscape(transferID),
+	)
+
+	req, err := http.NewRequest(
+		http.MethodPost,
+		finishURL,
+		nil,
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	msg := protocol.Message{
-		Type:      "file.end",
-		ID:        "file_end_1",
-		Timestamp: time.Now().UnixMilli(),
-		Payload:   payload,
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal("failed to finish transfer:", err)
+	}
+	defer resp.Body.Close()
+
+	var result protocol.TransferFinishResponse
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Fatal("failed to decode transfer finish response:", err)
 	}
 
-	if err := conn.WriteJSON(msg); err != nil {
-		log.Fatal("failed to send file.end:", err)
-	}
-
-	return expectChunkResponse(conn, msg.ID)
-}
-
-func expectChunkResponse(
-	conn *wsutil.SafeConn,
-	expectedID string,
-) protocol.FileChunkResponse {
-	for {
-		var response protocol.Message
-
-		if err := conn.ReadJSON(&response); err != nil {
-			log.Fatal("failed to read file transfer response:", err)
-		}
-
-		if response.Type == "error" {
-			log.Fatal("file transfer failed:", string(response.Payload))
-		}
-
-		if response.Type != "file.chunk.response" {
-			log.Fatal("unexpected response:", response.Type)
-		}
-
-		if response.ID != expectedID {
-			log.Fatal("unexpected response id:", response.ID)
-		}
-
-		var result protocol.FileChunkResponse
-
-		if err := protocol.DecodePayload(response.Payload, &result); err != nil {
-			log.Fatal("failed to decode file transfer response:", err)
-		}
-
-		return result
-	}
-}
-
-func expectAnyChunkResponse(
-	conn *wsutil.SafeConn,
-) protocol.FileChunkResponse {
-	var response protocol.Message
-
-	if err := conn.ReadJSON(&response); err != nil {
-		log.Fatal("failed to read file transfer response:", err)
-	}
-
-	if response.Type == "error" {
-		log.Fatal("file transfer failed:", string(response.Payload))
-	}
-
-	if response.Type != "file.chunk.response" {
-		log.Fatal("unexpected response:", response.Type)
-	}
-
-	var result protocol.FileChunkResponse
-
-	if err := protocol.DecodePayload(response.Payload, &result); err != nil {
-		log.Fatal("failed to decode file transfer response:", err)
+	if resp.StatusCode != http.StatusOK {
+		log.Fatal("failed to finish transfer:", result.Error)
 	}
 
 	return result
+}
+
+func reportTransferError(errs chan<- error, err error) {
+	select {
+	case errs <- err:
+	default:
+	}
 }
 
 func printProgress(

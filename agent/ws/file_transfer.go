@@ -3,9 +3,9 @@ package ws
 import (
 	"encoding/base64"
 	"errors"
-	"os"
 	"time"
 
+	transferpkg "github.com/123100123/lanlink/internal/transfer"
 	"github.com/123100123/lanlink/internal/wsutil"
 	"github.com/123100123/lanlink/protocol"
 )
@@ -62,7 +62,7 @@ func handleFileChunk(conn *wsutil.SafeConn, msg protocol.Message) {
 		return
 	}
 
-	transfer, ok := transferManager.Get(payload.TransferID)
+	active, ok := transferManager.Get(payload.TransferID)
 	if !ok {
 		writeError(conn, msg.ID, "unknown transfer id")
 		return
@@ -79,13 +79,13 @@ func handleFileChunk(conn *wsutil.SafeConn, msg protocol.Message) {
 		return
 	}
 
-	received, err := transfer.WriteChunk(
+	received, err := active.WriteChunk(
 		payload.Index,
 		payload.Offset,
 		data,
 	)
 	if err != nil {
-		if errors.Is(err, ErrDuplicateChunk) {
+		if errors.Is(err, transferpkg.ErrDuplicateChunk) {
 			writeFileChunkResponse(
 				conn,
 				msg.ID,
@@ -95,7 +95,7 @@ func handleFileChunk(conn *wsutil.SafeConn, msg protocol.Message) {
 					Index:      payload.Index,
 					Offset:     payload.Offset,
 					Received:   received,
-					Total:      transfer.Size,
+					Total:      active.Size,
 				},
 			)
 			return
@@ -115,7 +115,7 @@ func handleFileChunk(conn *wsutil.SafeConn, msg protocol.Message) {
 			Index:      payload.Index,
 			Offset:     payload.Offset,
 			Received:   received,
-			Total:      transfer.Size,
+			Total:      active.Size,
 		},
 	)
 }
@@ -128,37 +128,13 @@ func handleFileEnd(conn *wsutil.SafeConn, msg protocol.Message) {
 		return
 	}
 
-	transfer, ok := transferManager.Finish(payload.TransferID)
+	active, ok := transferManager.Finish(payload.TransferID)
 	if !ok {
 		writeError(conn, msg.ID, "unknown transfer id")
 		return
 	}
 
-	transfer.mu.Lock()
-	defer transfer.mu.Unlock()
-
-	if transfer.Size != transfer.ReceivedBytes {
-		transfer.File.Close()
-		os.Remove(transfer.TempPath)
-		writeError(conn, msg.ID, "file size mismatch")
-		return
-	}
-
-	if err := transfer.File.Sync(); err != nil {
-		transfer.File.Close()
-		os.Remove(transfer.TempPath)
-		writeError(conn, msg.ID, "failed to sync file")
-		return
-	}
-
-	if err := transfer.File.Close(); err != nil {
-		os.Remove(transfer.TempPath)
-		writeError(conn, msg.ID, "failed to close file")
-		return
-	}
-
-	if err := os.Rename(transfer.TempPath, transfer.FinalPath); err != nil {
-		os.Remove(transfer.TempPath)
+	if err := active.Finalize(); err != nil {
 		writeError(conn, msg.ID, "failed to finalize file")
 		return
 	}
@@ -169,9 +145,9 @@ func handleFileEnd(conn *wsutil.SafeConn, msg protocol.Message) {
 		protocol.FileChunkResponse{
 			Status:     "saved",
 			TransferID: payload.TransferID,
-			Path:       transfer.FinalPath,
-			Received:   transfer.ReceivedBytes,
-			Total:      transfer.Size,
+			Path:       active.FinalPath,
+			Received:   active.ReceivedBytes,
+			Total:      active.Size,
 		},
 	)
 }

@@ -17,7 +17,7 @@ const (
 type Config struct {
 	Port string
 
-	TransferChunkSize        int
+	TransferChunkSize         int
 	TransferMaxInFlightChunks int
 }
 

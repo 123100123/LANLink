@@ -9,7 +9,6 @@ import (
 	"github.com/123100123/lanlink/internal/network"
 )
 
-// corsMiddleware attaches the necessary headers and handles the OPTIONS preflight
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -28,11 +27,13 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func main() {
 	cfg := config.Load()
 
-	// Wrap all your handlers with the CORS middleware
 	http.HandleFunc("/health", corsMiddleware(healthHandler))
 	http.HandleFunc("/pair", corsMiddleware(pairHandler))
 	http.HandleFunc("/devices", corsMiddleware(devicesHandler))
 	http.HandleFunc("/ws", corsMiddleware(ws.Handler))
+
+	http.HandleFunc("/transfers/start", corsMiddleware(transferStartHandler))
+	http.HandleFunc("/transfers/", corsMiddleware(transferSubresourceHandler))
 
 	address := ":" + cfg.Port
 
