@@ -84,7 +84,7 @@ func main() {
 		filePath := os.Args[3]
 
 		sendFile(address, filePath)
-		
+
 	default:
 		fmt.Println("Unknown command:", command)
 		printUsage()

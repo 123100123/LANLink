@@ -11,10 +11,19 @@ import (
 
 	cliws "github.com/123100123/lanlink/cli/ws"
 	"github.com/123100123/lanlink/internal/auth"
+	"github.com/123100123/lanlink/internal/wsutil"
 	"github.com/123100123/lanlink/protocol"
 )
 
 const chunkSize = 64 * 1024
+const maxInFlightChunks = 16
+
+type chunkJob struct {
+	Index  int
+	Offset int64
+	Data   []byte
+	MsgID  string
+}
 
 func sendFile(address string, filePath string) {
 	file, err := os.Open(filePath)
@@ -35,13 +44,15 @@ func sendFile(address string, filePath string) {
 
 	transferID := "transfer_" + transferRawID
 
-	conn := cliws.ConnectAuthenticated(address)
-	defer conn.Close()
+	rawConn := cliws.ConnectAuthenticated(address)
+	defer rawConn.Close()
+
+	conn := wsutil.NewSafeConn(rawConn)
 
 	startTime := time.Now()
 
 	sendFileStart(conn, transferID, filepath.Base(filePath), info.Size())
-	sendFileChunks(conn, transferID, file, info.Size(), startTime)
+	sendFileChunksPipelined(conn, transferID, file, info.Size(), startTime)
 	result := sendFileEnd(conn, transferID)
 
 	fmt.Println("Chunked file upload complete")
@@ -49,10 +60,7 @@ func sendFile(address string, filePath string) {
 }
 
 func sendFileStart(
-	conn interface {
-		WriteJSON(v any) error
-		ReadJSON(v any) error
-	},
+	conn *wsutil.SafeConn,
 	transferID string,
 	filename string,
 	size int64,
@@ -75,85 +83,114 @@ func sendFileStart(
 		Payload:   payload,
 	}
 
-	err = conn.WriteJSON(msg)
-	if err != nil {
+	if err := conn.WriteJSON(msg); err != nil {
 		log.Fatal("failed to send file.start:", err)
 	}
 
-	expectChunkResponse(conn, "file_start_1")
+	expectChunkResponse(conn, msg.ID)
 }
 
-func sendFileChunks(
-	conn interface {
-		WriteJSON(v any) error
-		ReadJSON(v any) error
-	},
+func sendFileChunksPipelined(
+	conn *wsutil.SafeConn,
 	transferID string,
 	file *os.File,
 	totalSize int64,
 	startTime time.Time,
 ) {
-	buffer := make([]byte, chunkSize)
-	index := 0
-	var sent int64
+	inFlight := 0
+	nextIndex := 0
+	nextOffset := int64(0)
+	eof := false
+	ackedBytes := int64(0)
 
-	for {
-		n, err := file.Read(buffer)
+	for !eof || inFlight > 0 {
+		for !eof && inFlight < maxInFlightChunks {
+			job, ok := readNextChunk(file, nextIndex, nextOffset)
+			if !ok {
+				eof = true
+				break
+			}
 
-		if err != nil && err != io.EOF {
-			log.Fatal(err)
+			if err := sendFileChunk(conn, transferID, job); err != nil {
+				log.Fatal("failed to send file.chunk:", err)
+			}
+
+			inFlight++
+			nextIndex++
+			nextOffset += int64(len(job.Data))
 		}
 
-		if n == 0 {
-			break
+		response := expectAnyChunkResponse(conn)
+
+		if response.Status != "chunk.received" && response.Status != "chunk.duplicate" {
+			log.Fatal("unexpected chunk status:", response.Status)
 		}
 
-		content := base64.StdEncoding.EncodeToString(buffer[:n])
+		inFlight--
+		ackedBytes = response.Received
 
-		payload, err := protocol.EncodePayload(
-			protocol.FileChunkPayload{
-				TransferID: transferID,
-				Index:      index,
-				Content:    content,
-			},
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		msg := protocol.Message{
-			Type:      "file.chunk",
-			ID:        fmt.Sprintf("file_chunk_%d", index),
-			Timestamp: time.Now().UnixMilli(),
-			Payload:   payload,
-		}
-
-		err = conn.WriteJSON(msg)
-		if err != nil {
-			log.Fatal("failed to send file.chunk:", err)
-		}
-
-		expectChunkResponse(conn, msg.ID)
-
-		sent += int64(n)
-
-		printProgress(
-			sent,
-			totalSize,
-			startTime,
-		)
-
-		index++
+		printProgress(ackedBytes, totalSize, startTime)
 	}
 
 	fmt.Println()
 }
 
+func readNextChunk(
+	file *os.File,
+	index int,
+	offset int64,
+) (chunkJob, bool) {
+	buffer := make([]byte, chunkSize)
+
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		log.Fatal(err)
+	}
+
+	if n == 0 {
+		return chunkJob{}, false
+	}
+
+	return chunkJob{
+		Index:  index,
+		Offset: offset,
+		Data:   buffer[:n],
+		MsgID:  fmt.Sprintf("file_chunk_%d", index),
+	}, true
+}
+
+func sendFileChunk(
+	conn *wsutil.SafeConn,
+	transferID string,
+	job chunkJob,
+) error {
+	content := base64.StdEncoding.EncodeToString(job.Data)
+
+	payload, err := protocol.EncodePayload(
+		protocol.FileChunkPayload{
+			TransferID: transferID,
+			Index:      job.Index,
+			Offset:     job.Offset,
+			Length:     len(job.Data),
+			Content:    content,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	msg := protocol.Message{
+		Type:      "file.chunk",
+		ID:        job.MsgID,
+		Timestamp: time.Now().UnixMilli(),
+		Payload:   payload,
+	}
+
+	return conn.WriteJSON(msg)
+}
+
 func sendFileEnd(
-	conn interface {
-		WriteJSON(v any) error
-		ReadJSON(v any) error
-	},
+	conn *wsutil.SafeConn,
 	transferID string,
 ) protocol.FileChunkResponse {
 	payload, err := protocol.EncodePayload(
@@ -172,8 +209,7 @@ func sendFileEnd(
 		Payload:   payload,
 	}
 
-	err = conn.WriteJSON(msg)
-	if err != nil {
+	if err := conn.WriteJSON(msg); err != nil {
 		log.Fatal("failed to send file.end:", err)
 	}
 
@@ -181,15 +217,44 @@ func sendFileEnd(
 }
 
 func expectChunkResponse(
-	conn interface {
-		ReadJSON(v any) error
-	},
+	conn *wsutil.SafeConn,
 	expectedID string,
+) protocol.FileChunkResponse {
+	for {
+		var response protocol.Message
+
+		if err := conn.ReadJSON(&response); err != nil {
+			log.Fatal("failed to read file transfer response:", err)
+		}
+
+		if response.Type == "error" {
+			log.Fatal("file transfer failed:", string(response.Payload))
+		}
+
+		if response.Type != "file.chunk.response" {
+			log.Fatal("unexpected response:", response.Type)
+		}
+
+		if response.ID != expectedID {
+			log.Fatal("unexpected response id:", response.ID)
+		}
+
+		var result protocol.FileChunkResponse
+
+		if err := protocol.DecodePayload(response.Payload, &result); err != nil {
+			log.Fatal("failed to decode file transfer response:", err)
+		}
+
+		return result
+	}
+}
+
+func expectAnyChunkResponse(
+	conn *wsutil.SafeConn,
 ) protocol.FileChunkResponse {
 	var response protocol.Message
 
-	err := conn.ReadJSON(&response)
-	if err != nil {
+	if err := conn.ReadJSON(&response); err != nil {
 		log.Fatal("failed to read file transfer response:", err)
 	}
 
@@ -201,14 +266,9 @@ func expectChunkResponse(
 		log.Fatal("unexpected response:", response.Type)
 	}
 
-	if response.ID != expectedID {
-		log.Fatal("unexpected response id:", response.ID)
-	}
-
 	var result protocol.FileChunkResponse
 
-	err = protocol.DecodePayload(response.Payload, &result)
-	if err != nil {
+	if err := protocol.DecodePayload(response.Payload, &result); err != nil {
 		log.Fatal("failed to decode file transfer response:", err)
 	}
 
