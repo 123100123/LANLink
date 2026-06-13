@@ -11,12 +11,10 @@ import (
 
 	cliws "github.com/123100123/lanlink/cli/ws"
 	"github.com/123100123/lanlink/internal/auth"
+	"github.com/123100123/lanlink/internal/config"
 	"github.com/123100123/lanlink/internal/wsutil"
 	"github.com/123100123/lanlink/protocol"
 )
-
-const chunkSize = 64 * 1024
-const maxInFlightChunks = 16
 
 type chunkJob struct {
 	Index  int
@@ -26,6 +24,8 @@ type chunkJob struct {
 }
 
 func sendFile(address string, filePath string) {
+	cfg := config.Load()
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatal(err)
@@ -51,8 +51,23 @@ func sendFile(address string, filePath string) {
 
 	startTime := time.Now()
 
-	sendFileStart(conn, transferID, filepath.Base(filePath), info.Size())
-	sendFileChunksPipelined(conn, transferID, file, info.Size(), startTime)
+	sendFileStart(
+		conn,
+		transferID,
+		filepath.Base(filePath),
+		info.Size(),
+	)
+
+	sendFileChunksPipelined(
+		conn,
+		transferID,
+		file,
+		info.Size(),
+		startTime,
+		cfg.TransferChunkSize,
+		cfg.TransferMaxInFlightChunks,
+	)
+
 	result := sendFileEnd(conn, transferID)
 
 	fmt.Println("Chunked file upload complete")
@@ -96,6 +111,8 @@ func sendFileChunksPipelined(
 	file *os.File,
 	totalSize int64,
 	startTime time.Time,
+	chunkSize int,
+	maxInFlightChunks int,
 ) {
 	inFlight := 0
 	nextIndex := 0
@@ -105,7 +122,12 @@ func sendFileChunksPipelined(
 
 	for !eof || inFlight > 0 {
 		for !eof && inFlight < maxInFlightChunks {
-			job, ok := readNextChunk(file, nextIndex, nextOffset)
+			job, ok := readNextChunk(
+				file,
+				nextIndex,
+				nextOffset,
+				chunkSize,
+			)
 			if !ok {
 				eof = true
 				break
@@ -122,12 +144,16 @@ func sendFileChunksPipelined(
 
 		response := expectAnyChunkResponse(conn)
 
-		if response.Status != "chunk.received" && response.Status != "chunk.duplicate" {
+		if response.Status != "chunk.received" &&
+			response.Status != "chunk.duplicate" {
 			log.Fatal("unexpected chunk status:", response.Status)
 		}
 
 		inFlight--
-		ackedBytes = response.Received
+
+		if response.Received > ackedBytes {
+			ackedBytes = response.Received
+		}
 
 		printProgress(ackedBytes, totalSize, startTime)
 	}
@@ -139,6 +165,7 @@ func readNextChunk(
 	file *os.File,
 	index int,
 	offset int64,
+	chunkSize int,
 ) (chunkJob, bool) {
 	buffer := make([]byte, chunkSize)
 

@@ -3,12 +3,22 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
 
+const (
+	defaultPort                = "8787"
+	defaultTransferChunkSize   = 64 * 1024
+	defaultTransferMaxInFlight = 16
+)
+
 type Config struct {
 	Port string
+
+	TransferChunkSize        int
+	TransferMaxInFlightChunks int
 }
 
 func Load() Config {
@@ -17,12 +27,53 @@ func Load() Config {
 		log.Println("No .env file found, using environment variables")
 	}
 
-	port := os.Getenv("LANLINK_PORT")
-	if port == "" {
-		port = "8787"
+	return Config{
+		Port: os.Getenv("LANLINK_PORT"),
+
+		TransferChunkSize: envInt(
+			"TRANSFER_CHUNK_SIZE",
+			defaultTransferChunkSize,
+		),
+
+		TransferMaxInFlightChunks: envInt(
+			"TRANSFER_MAX_IN_FLIGHT_CHUNKS",
+			defaultTransferMaxInFlight,
+		),
+	}.withDefaults()
+}
+
+func (c Config) withDefaults() Config {
+	if c.Port == "" {
+		c.Port = defaultPort
 	}
 
-	return Config{
-		Port: port,
+	if c.TransferChunkSize <= 0 {
+		c.TransferChunkSize = defaultTransferChunkSize
 	}
+
+	if c.TransferMaxInFlightChunks <= 0 {
+		c.TransferMaxInFlightChunks = defaultTransferMaxInFlight
+	}
+
+	return c
+}
+
+func envInt(key string, fallback int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		log.Printf("invalid %s=%q, using default %d", key, raw, fallback)
+		return fallback
+	}
+
+	if value <= 0 {
+		log.Printf("invalid %s=%q, using default %d", key, raw, fallback)
+		return fallback
+	}
+
+	return value
 }
