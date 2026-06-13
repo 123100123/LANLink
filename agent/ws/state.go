@@ -1,3 +1,5 @@
 package ws
 
-var transferManager = NewTransferManager()
+import transferpkg "github.com/123100123/lanlink/internal/transfer"
+
+var transferManager = transferpkg.NewManager()

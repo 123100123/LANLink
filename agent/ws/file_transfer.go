@@ -2,104 +2,172 @@ package ws
 
 import (
 	"encoding/base64"
-	"os"
-	"path/filepath"
+	"errors"
 	"time"
 
+	transferpkg "github.com/123100123/lanlink/internal/transfer"
+	"github.com/123100123/lanlink/internal/wsutil"
 	"github.com/123100123/lanlink/protocol"
-	"github.com/gorilla/websocket"
 )
 
-func handleFileSend(
-	conn *websocket.Conn,
-	msg protocol.Message,
-) {
+func handleFileStart(conn *wsutil.SafeConn, msg protocol.Message) {
+	var payload protocol.FileStartPayload
 
-	var payload protocol.FileSendPayload
-
-	err := protocol.DecodePayload(
-		msg.Payload,
-		&payload,
-	)
-
-	if err != nil {
-		writeError(
-			conn,
-			msg.ID,
-			"invalid file payload",
-		)
+	if err := protocol.DecodePayload(msg.Payload, &payload); err != nil {
+		writeError(conn, msg.ID, "invalid file.start payload")
 		return
 	}
 
-	data, err := base64.StdEncoding.DecodeString(
-		payload.Content,
-	)
-
-	if err != nil {
-		writeError(
-			conn,
-			msg.ID,
-			"invalid base64 content",
-		)
+	if payload.TransferID == "" {
+		writeError(conn, msg.ID, "missing transfer id")
 		return
 	}
 
-	err = os.MkdirAll(
-		"received",
-		0755,
-	)
-
-	if err != nil {
-		writeError(
-			conn,
-			msg.ID,
-			"failed creating folder",
-		)
+	if payload.Filename == "" {
+		writeError(conn, msg.ID, "missing filename")
 		return
 	}
 
-	path := filepath.Join(
-		"received",
+	if payload.Size < 0 {
+		writeError(conn, msg.ID, "invalid file size")
+		return
+	}
+
+	_, err := transferManager.Start(
+		payload.TransferID,
 		payload.Filename,
+		payload.Size,
 	)
-
-	err = os.WriteFile(
-		path,
-		data,
-		0644,
-	)
-
 	if err != nil {
-		writeError(
-			conn,
-			msg.ID,
-			"failed saving file",
-		)
+		writeError(conn, msg.ID, "failed to start transfer")
 		return
 	}
 
-	responsePayload, err := protocol.EncodePayload(
-		protocol.FileSendResponse{
-			Status: "saved",
-			Path: path,
+	writeFileChunkResponse(
+		conn,
+		msg.ID,
+		protocol.FileChunkResponse{
+			Status:     "started",
+			TransferID: payload.TransferID,
+			Total:      payload.Size,
 		},
 	)
+}
 
-	if err != nil {
-		writeError(
-			conn,
-			msg.ID,
-			"failed encoding response",
-		)
+func handleFileChunk(conn *wsutil.SafeConn, msg protocol.Message) {
+	var payload protocol.FileChunkPayload
+
+	if err := protocol.DecodePayload(msg.Payload, &payload); err != nil {
+		writeError(conn, msg.ID, "invalid file.chunk payload")
 		return
 	}
 
-	response := protocol.Message{
-		Type: "file.send.response",
-		ID: msg.ID,
-		Timestamp: time.Now().UnixMilli(),
-		Payload: responsePayload,
+	active, ok := transferManager.Get(payload.TransferID)
+	if !ok {
+		writeError(conn, msg.ID, "unknown transfer id")
+		return
 	}
 
-	conn.WriteJSON(response)
+	data, err := base64.StdEncoding.DecodeString(payload.Content)
+	if err != nil {
+		writeError(conn, msg.ID, "invalid chunk content")
+		return
+	}
+
+	if payload.Length != len(data) {
+		writeError(conn, msg.ID, "chunk length mismatch")
+		return
+	}
+
+	received, err := active.WriteChunk(
+		payload.Index,
+		payload.Offset,
+		data,
+	)
+	if err != nil {
+		if errors.Is(err, transferpkg.ErrDuplicateChunk) {
+			writeFileChunkResponse(
+				conn,
+				msg.ID,
+				protocol.FileChunkResponse{
+					Status:     "chunk.duplicate",
+					TransferID: payload.TransferID,
+					Index:      payload.Index,
+					Offset:     payload.Offset,
+					Received:   received,
+					Total:      active.Size,
+				},
+			)
+			return
+		}
+
+		transferManager.Cancel(payload.TransferID)
+		writeError(conn, msg.ID, "failed to write chunk")
+		return
+	}
+
+	writeFileChunkResponse(
+		conn,
+		msg.ID,
+		protocol.FileChunkResponse{
+			Status:     "chunk.received",
+			TransferID: payload.TransferID,
+			Index:      payload.Index,
+			Offset:     payload.Offset,
+			Received:   received,
+			Total:      active.Size,
+		},
+	)
+}
+
+func handleFileEnd(conn *wsutil.SafeConn, msg protocol.Message) {
+	var payload protocol.FileEndPayload
+
+	if err := protocol.DecodePayload(msg.Payload, &payload); err != nil {
+		writeError(conn, msg.ID, "invalid file.end payload")
+		return
+	}
+
+	active, ok := transferManager.Finish(payload.TransferID)
+	if !ok {
+		writeError(conn, msg.ID, "unknown transfer id")
+		return
+	}
+
+	if err := active.Finalize(); err != nil {
+		writeError(conn, msg.ID, "failed to finalize file")
+		return
+	}
+
+	writeFileChunkResponse(
+		conn,
+		msg.ID,
+		protocol.FileChunkResponse{
+			Status:     "saved",
+			TransferID: payload.TransferID,
+			Path:       active.FinalPath,
+			Received:   active.ReceivedBytes,
+			Total:      active.Size,
+		},
+	)
+}
+
+func writeFileChunkResponse(
+	conn *wsutil.SafeConn,
+	id string,
+	response protocol.FileChunkResponse,
+) {
+	payload, err := protocol.EncodePayload(response)
+	if err != nil {
+		return
+	}
+
+	msg := protocol.Message{
+		Type:      "file.chunk.response",
+		ID:        id,
+		Timestamp: time.Now().UnixMilli(),
+		Payload:   payload,
+	}
+
+	conn.WriteJSON(msg)
 }

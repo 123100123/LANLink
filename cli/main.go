@@ -73,7 +73,7 @@ func main() {
 		messageParts := os.Args[3:]
 
 		cliws.SendDirectMessage(address, messageParts)
-	
+
 	case "send-file":
 		if len(os.Args) < 4 {
 			printUsage()
@@ -83,22 +83,8 @@ func main() {
 		address := os.Args[2]
 		filePath := os.Args[3]
 
-		sendFile(
-			address,
-			filePath,
-		)
+		sendFile(address, filePath)
 
-	case "send-file-chunked":
-		if len(os.Args) < 4 {
-			printUsage()
-			return
-		}
-
-		address := os.Args[2]
-		filePath := os.Args[3]
-
-		sendFileChunked(address, filePath)
-		
 	default:
 		fmt.Println("Unknown command:", command)
 		printUsage()
