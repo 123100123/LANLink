@@ -59,7 +59,7 @@ export default function PairScreen() {
         // Credentials are already saved; preference persistence is best-effort.
       }
       setStatus("Paired successfully");
-      router.replace(`/(tabs)/devices/${result.device_id}`);
+      router.replace("/(tabs)/device");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Pairing failed");
     } finally {

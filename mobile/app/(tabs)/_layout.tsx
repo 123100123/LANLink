@@ -1,11 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
-import { useSessionStore } from "@/store/sessionStore";
-
 export default function TabsLayout() {
-  const credentials = useSessionStore((state) => state.credentials);
-
   return (
     <Tabs
       screenOptions={{
@@ -26,26 +22,9 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="home"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="devices/index"
-        options={{
-          href: null,
-        }}
-      />
-
-      <Tabs.Screen
-        name="devices/[deviceId]"
+        name="device"
         options={{
           title: "Device",
-          href: credentials?.deviceId
-            ? `/(tabs)/devices/${credentials.deviceId}`
-            : null,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? "phone-portrait" : "phone-portrait-outline"}

@@ -38,7 +38,7 @@ export default function SetupScreen() {
 
   useEffect(() => {
     if (hydrated && hasCredentials && credentials?.deviceId) {
-      router.replace(`/(tabs)/devices/${credentials.deviceId}`);
+      router.replace("/(tabs)/device");
     }
   }, [hydrated, hasCredentials, credentials?.deviceId, router]);
 

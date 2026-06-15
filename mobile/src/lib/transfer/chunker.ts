@@ -1,6 +1,6 @@
-import * as FileSystem from "expo-file-system/legacy";
+import { File } from "expo-file-system";
 
-export const CHUNK_SIZE = 64 * 1024;
+export const CHUNK_SIZE = 128 * 1024;
 
 export type PickedFile = {
   uri: string;
@@ -8,29 +8,24 @@ export type PickedFile = {
   size?: number;
 };
 
-export async function getFileSize(uri: string): Promise<number> {
-  const info = await FileSystem.getInfoAsync(uri);
-  if (!info.exists || typeof info.size !== "number") {
-    throw new Error("Unable to read file metadata");
-  }
-  return info.size;
+export function getExpoFile(uri: string): File {
+  return new File(uri);
 }
 
-export async function* readBase64Chunks(uri: string, chunkSize = CHUNK_SIZE): AsyncGenerator<{ index: number; content: string }> {
-  let index = 0;
-  let position = 0;
-  const fileSize = await getFileSize(uri);
+export function getFileSize(file: File): number {
+  return file.size;
+}
 
-  while (position < fileSize) {
-    const length = Math.min(chunkSize, fileSize - position);
-    const content = await FileSystem.readAsStringAsync(uri, {
-      encoding: "base64",
-      position,
-      length,
-    });
-
-    yield { index, content };
-    index += 1;
-    position += length;
+export function readChunk(
+  file: File,
+  offset: number,
+  length: number
+): Uint8Array {
+  const handle = file.open();
+  try {
+    handle.offset = offset;
+    return handle.readBytes(length);
+  } finally {
+    handle.close();
   }
 }

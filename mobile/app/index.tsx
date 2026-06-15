@@ -21,7 +21,7 @@ export default function Index() {
     return <Redirect href="/setup" />;
   }
 
-  return <Redirect href={`/(tabs)/devices/${credentials.deviceId}`} />;
+  return <Redirect href="/(tabs)/device" />;
 }
 
 const styles = StyleSheet.create({

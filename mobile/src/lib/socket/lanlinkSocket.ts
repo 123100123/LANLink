@@ -5,10 +5,6 @@ import type {
   AuthSuccess,
   DirectMessagePayload,
   DirectMessageResponse,
-  FileChunkPayload,
-  FileChunkResponse,
-  FileEndPayload,
-  FileStartPayload,
   PingPayload,
   PongPayload,
 } from "@/lib/protocol/payloads";
@@ -200,45 +196,6 @@ export class LanLinkSocket {
     }
 
     return response.payload as DirectMessageResponse;
-  }
-
-  async sendFileStart(transferId: string, filename: string, size: number): Promise<FileChunkResponse> {
-    await this.ensureConnected();
-    const response = await this.sendAndWait(
-      "file.start",
-      { transfer_id: transferId, filename, size } satisfies FileStartPayload,
-      "file_start"
-    );
-
-    if (response.type !== "file.chunk.response") {
-      throw new Error(`Unexpected file start response: ${response.type}`);
-    }
-
-    return response.payload as FileChunkResponse;
-  }
-
-  async sendFileChunk(transferId: string, index: number, content: string): Promise<FileChunkResponse> {
-    const response = await this.sendAndWait(
-      "file.chunk",
-      { transfer_id: transferId, index, content } satisfies FileChunkPayload,
-      `file_chunk_${index}`
-    );
-
-    if (response.type !== "file.chunk.response") {
-      throw new Error(`Unexpected file chunk response: ${response.type}`);
-    }
-
-    return response.payload as FileChunkResponse;
-  }
-
-  async sendFileEnd(transferId: string): Promise<FileChunkResponse> {
-    const response = await this.sendAndWait("file.end", { transfer_id: transferId } satisfies FileEndPayload, "file_end");
-
-    if (response.type !== "file.chunk.response") {
-      throw new Error(`Unexpected file end response: ${response.type}`);
-    }
-
-    return response.payload as FileChunkResponse;
   }
 
   close() {

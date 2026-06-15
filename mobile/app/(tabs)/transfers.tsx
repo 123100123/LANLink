@@ -1,30 +1,135 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { useTransferStore } from "@/store/transferStore";
+import { useTransferStore, type TransferItem } from "@/store/transferStore";
 
 function formatTime(timestamp?: number) {
-  if (!timestamp) {
-    return "";
-  }
-
+  if (!timestamp) return "";
   return new Date(timestamp).toLocaleString();
 }
 
-function formatBytes(bytes?: number) {
-  if (!bytes || bytes <= 0) {
-    return "0 B";
-  }
-
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let unitIndex = 0;
-
   while (value >= 1024 && unitIndex < units.length - 1) {
     value /= 1024;
     unitIndex += 1;
   }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
 
-  return `${value.toFixed(unitIndex === 0 ? 0 : 2)} ${units[unitIndex]}`;
+function formatSpeed(bytesPerSec: number) {
+  if (bytesPerSec <= 0) return "";
+  const mbps = bytesPerSec / 1024 / 1024;
+  return `${mbps.toFixed(1)} MB/s`;
+}
+
+function formatETA(sentBytes: number, totalBytes: number, speed: number) {
+  if (speed <= 0 || totalBytes <= 0) return "";
+  const remaining = totalBytes - sentBytes;
+  const seconds = remaining / speed;
+  if (seconds < 1) return "<1s";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${minutes}m${secs}s`;
+}
+
+function TransferCard({ transfer }: { transfer: TransferItem }) {
+  const percent = Math.round(transfer.progress * 100);
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.transferHeader}>
+        <Text style={styles.filename} numberOfLines={1}>
+          {transfer.filename}
+        </Text>
+        <Text style={[styles.status, statusColor(transfer.status)]}>
+          {statusLabel(transfer, percent)}
+        </Text>
+      </View>
+
+      {transfer.status === "uploading" && (
+        <>
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${Math.max(2, percent)}%` },
+              ]}
+            />
+          </View>
+
+          <View style={styles.statsRow}>
+            <Text style={styles.meta}>
+              {formatBytes(transfer.sentBytes)} / {formatBytes(transfer.size)}
+            </Text>
+            {transfer.speed > 0 && (
+              <Text style={styles.meta}>{formatSpeed(transfer.speed)}</Text>
+            )}
+          </View>
+
+          {transfer.speed > 0 && (
+            <Text style={styles.meta}>
+              ETA {formatETA(transfer.sentBytes, transfer.size, transfer.speed)}
+            </Text>
+          )}
+        </>
+      )}
+
+      {transfer.status === "completed" && (
+        <>
+          <Text style={styles.meta}>
+            {formatBytes(transfer.size)} sent
+            {transfer.speed > 0 && ` at ${formatSpeed(transfer.speed)}`}
+          </Text>
+          <Text style={styles.meta}>
+            Finished {formatTime(transfer.completedAt)}
+          </Text>
+          {transfer.savedPath && (
+            <Text style={styles.path}>{transfer.savedPath}</Text>
+          )}
+        </>
+      )}
+
+      {transfer.status === "failed" && (
+        <Text style={styles.error}>{transfer.error ?? "Transfer failed"}</Text>
+      )}
+
+      {transfer.status === "cancelled" && (
+        <Text style={styles.meta}>Cancelled by user</Text>
+      )}
+    </View>
+  );
+}
+
+function statusLabel(t: TransferItem, percent: number) {
+  switch (t.status) {
+    case "uploading":
+      return `${percent}%`;
+    case "completed":
+      return "Done";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "queued":
+      return "Queued";
+  }
+}
+
+function statusColor(status: TransferItem["status"]) {
+  switch (status) {
+    case "completed":
+      return { color: "#6fcf97" };
+    case "failed":
+      return { color: "#ff8a8a" };
+    case "cancelled":
+      return { color: "#f0c674" };
+    default:
+      return {};
+  }
 }
 
 export default function TransfersScreen() {
@@ -36,81 +141,27 @@ export default function TransfersScreen() {
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.title}>Transfers</Text>
-          <Text style={styles.subtitle}>Recent file uploads</Text>
+          <Text style={styles.subtitle}>Upload history</Text>
         </View>
 
-        {transfers.length > 0 ? (
+        {transfers.length > 0 && (
           <Pressable style={styles.clearButton} onPress={clearTransfers}>
             <Text style={styles.clearButtonText}>Clear</Text>
           </Pressable>
-        ) : null}
+        )}
       </View>
 
       {transfers.length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.emptyTitle}>No transfers yet</Text>
           <Text style={styles.body}>
-            Sent files will appear here with progress and completion time.
+            Send a file from the Device tab to see progress here.
           </Text>
         </View>
       ) : (
-        transfers.map((transfer) => {
-          const percent = Math.round(transfer.progress * 100);
-
-          return (
-            <View key={transfer.id} style={styles.card}>
-              <View style={styles.transferHeader}>
-                <Text style={styles.filename} numberOfLines={1}>
-                  {transfer.filename}
-                </Text>
-
-                <Text style={styles.status}>
-                  {transfer.status === "uploading"
-                    ? `${percent}%`
-                    : transfer.status === "completed"
-                      ? "Sent"
-                      : "Failed"}
-                </Text>
-              </View>
-
-              {transfer.status === "uploading" ? (
-                <>
-                  <View style={styles.progressTrack}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        { width: `${Math.max(2, percent)}%` },
-                      ]}
-                    />
-                  </View>
-
-                  <Text style={styles.meta}>
-                    {formatBytes(transfer.sentBytes)} /{" "}
-                    {formatBytes(transfer.size)}
-                  </Text>
-                </>
-              ) : null}
-
-              {transfer.status === "completed" ? (
-                <>
-                  <Text style={styles.meta}>
-                    Sent at {formatTime(transfer.completedAt)}
-                  </Text>
-
-                  {transfer.savedPath ? (
-                    <Text style={styles.path}>{transfer.savedPath}</Text>
-                  ) : null}
-                </>
-              ) : null}
-
-              {transfer.status === "failed" ? (
-                <Text style={styles.error}>
-                  {transfer.error ?? "Transfer failed"}
-                </Text>
-              ) : null}
-            </View>
-          );
-        })
+        transfers.map((transfer) => (
+          <TransferCard key={transfer.id} transfer={transfer} />
+        ))
       )}
     </ScrollView>
   );
@@ -169,7 +220,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   status: {
-    color: "#9db1d1",
     fontWeight: "700",
   },
   progressTrack: {
@@ -184,9 +234,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#4f7cff",
     borderRadius: 999,
   },
+  statsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 10,
+  },
   meta: {
     color: "#9db1d1",
-    marginTop: 10,
+    marginTop: 4,
   },
   path: {
     color: "#6f7f9d",

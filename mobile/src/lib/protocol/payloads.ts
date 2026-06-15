@@ -63,6 +63,8 @@ export type FileStartPayload = {
 export type FileChunkPayload = {
   transfer_id: string;
   index: number;
+  offset: number;
+  length: number;
   content: string;
 };
 
@@ -73,6 +75,10 @@ export type FileEndPayload = {
 export type FileChunkResponse = {
   status: string;
   transfer_id?: string;
+  index?: number;
+  offset?: number;
+  received?: number;
+  total?: number;
   path?: string;
   error?: string;
 };
@@ -84,4 +90,36 @@ export type LanLinkMessage = {
   action?: string;
   timestamp?: number;
   payload?: unknown;
+};
+
+export type TransferStartRequest = {
+  transfer_id: string;
+  filename: string;
+  size: number;
+};
+
+export type TransferStartResponse = {
+  status: string;
+  transfer_id?: string;
+  total?: number;
+  error?: string;
+};
+
+export type TransferChunkResponse = {
+  status: string;
+  transfer_id?: string;
+  index?: number;
+  offset?: number;
+  received?: number;
+  total?: number;
+  error?: string;
+};
+
+export type TransferFinishResponse = {
+  status: string;
+  transfer_id?: string;
+  path?: string;
+  received?: number;
+  total?: number;
+  error?: string;
 };
