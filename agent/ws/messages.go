@@ -1,20 +1,18 @@
 package ws
 
 import (
+	"log"
 	"time"
 
-	"log"
-
 	"github.com/123100123/lanlink/internal/store"
+	"github.com/123100123/lanlink/internal/wsutil"
 	"github.com/123100123/lanlink/protocol"
-	"github.com/gorilla/websocket"
 )
 
 func handleHello(
-	conn *websocket.Conn,
+	conn *wsutil.SafeConn,
 	msg protocol.Message,
 ) {
-
 	payload, err := protocol.EncodePayload(
 		"hello from authenticated lanlink agent",
 	)
@@ -34,11 +32,10 @@ func handleHello(
 }
 
 func writeError(
-	conn *websocket.Conn,
+	conn *wsutil.SafeConn,
 	id string,
 	reason string,
 ) {
-
 	payload, err := protocol.EncodePayload(
 		reason,
 	)
@@ -58,7 +55,7 @@ func writeError(
 }
 
 func handlePing(
-	conn *websocket.Conn,
+	conn *wsutil.SafeConn,
 	msg protocol.Message,
 ) {
 	var ping protocol.PingPayload
@@ -91,7 +88,11 @@ func handlePing(
 	conn.WriteJSON(response)
 }
 
-func handleDirectMessage(conn *websocket.Conn, msg protocol.Message, device *store.Device) {
+func handleDirectMessage(
+	conn *wsutil.SafeConn,
+	msg protocol.Message,
+	device *store.Device,
+) {
 	var payload protocol.DirectMessagePayload
 
 	err := protocol.DecodePayload(msg.Payload, &payload)
@@ -102,9 +103,11 @@ func handleDirectMessage(conn *websocket.Conn, msg protocol.Message, device *sto
 
 	log.Println("direct message from", device.DeviceID+":", payload.Text)
 
-	responsePayload, err := protocol.EncodePayload(protocol.DirectMessageResponse{
-		Status: "received",
-	})
+	responsePayload, err := protocol.EncodePayload(
+		protocol.DirectMessageResponse{
+			Status: "received",
+		},
+	)
 	if err != nil {
 		writeError(conn, msg.ID, "failed to encode direct message response")
 		return
