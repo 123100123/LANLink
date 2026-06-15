@@ -7,7 +7,10 @@ import (
 	ws "github.com/123100123/lanlink/agent/ws"
 	"github.com/123100123/lanlink/internal/config"
 	"github.com/123100123/lanlink/internal/network"
+	"github.com/123100123/lanlink/internal/pairing"
 )
+
+const pairingTokenLength = 6
 
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +29,13 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 func main() {
 	cfg := config.Load()
+
+	var err error
+
+	pairingManager, err = pairing.NewManager(pairingTokenLength)
+	if err != nil {
+		log.Fatal("failed to generate pairing token:", err)
+	}
 
 	http.HandleFunc("/health", corsMiddleware(healthHandler))
 	http.HandleFunc("/pair", corsMiddleware(pairHandler))
@@ -48,6 +58,11 @@ func main() {
 		}
 		log.Println("")
 	}
+
+	log.Println("Pairing token:", pairingManager.Token())
+	log.Println("Use this token to pair a new device.")
+	log.Println("A new token will be generated after each successful pairing.")
+	log.Println("")
 
 	err = http.ListenAndServe(address, nil)
 	if err != nil {
