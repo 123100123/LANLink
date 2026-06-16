@@ -13,6 +13,8 @@ export type TransferItem = {
   tempUri?: string;
   filename: string;
   size: number;
+  agentAddress: string;
+  authToken: string;
   sentBytes: number;
   progress: number;
   status: TransferStatus;
@@ -28,7 +30,10 @@ type TransferStore = {
   transfers: TransferItem[];
   addTransfer: (transfer: TransferItem) => void;
   addTransfers: (transfers: TransferItem[]) => void;
-  updateTransfer: (id: string, patch: Partial<Omit<TransferItem, "id">>) => void;
+  updateTransfer: (
+    id: string,
+    patch: Partial<Omit<TransferItem, "id">>
+  ) => void;
   removeTransfer: (id: string) => void;
   clearCompleted: () => void;
   clearAll: () => void;

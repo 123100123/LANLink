@@ -43,7 +43,7 @@ export default function SettingsScreen() {
   async function handleClearCredentials() {
     await clearCredentials();
     clearSession();
-    router.replace("/setup");
+    router.replace("/pair");
   }
 
   return (

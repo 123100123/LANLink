@@ -11,8 +11,8 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 
-import { pairDevice } from "@/lib/api/http";
-import { savePreferences } from "@/lib/storage/preferences";
+import { checkHealth, pairDevice } from "@/lib/api/http";
+import { loadPreferences, savePreferences } from "@/lib/storage/preferences";
 import { useSessionStore } from "@/store/sessionStore";
 
 type PairPayload = {
@@ -46,7 +46,12 @@ function parsePairQR(data: string): { address: string; token: string } | null {
 
 export default function PairScreen() {
   const router = useRouter();
+  const hydrate = useSessionStore((state) => state.hydrate);
+  const hydrated = useSessionStore((state) => state.hydrated);
+  const hasCredentials = useSessionStore((state) => state.hasCredentials);
+  const credentials = useSessionStore((state) => state.credentials);
   const agentAddress = useSessionStore((state) => state.agentAddress);
+  const setAgentAddress = useSessionStore((state) => state.setAgentAddress);
   const setCredentials = useSessionStore((state) => state.setCredentials);
 
   const [deviceName, setDeviceName] = useState("lanlink-mobile");
@@ -54,19 +59,62 @@ export default function PairScreen() {
   const [address, setAddress] = useState(agentAddress);
   const [status, setStatus] = useState<string>("Ready");
   const [loading, setLoading] = useState(false);
+  const [healthLoading, setHealthLoading] = useState(false);
   const [scanning, setScanning] = useState(false);
 
   const [permission, requestPermission] = useCameraPermissions();
 
   useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  useEffect(() => {
+    if (hydrated && hasCredentials && credentials?.deviceId) {
+      router.replace("/(tabs)/device");
+    }
+  }, [hydrated, hasCredentials, credentials?.deviceId, router]);
+
+  useEffect(() => {
     setAddress(agentAddress);
   }, [agentAddress]);
 
+  async function persistAddress(addr: string) {
+    setAgentAddress(addr);
+    try {
+      const prefs = await loadPreferences();
+      await savePreferences({ ...prefs, agentAddress: addr });
+    } catch {}
+  }
+
+  async function handleHealthCheck() {
+    const addr = address.trim();
+    if (!addr) {
+      setStatus("Enter an agent address first");
+      return;
+    }
+    setHealthLoading(true);
+    setStatus("Checking...");
+    try {
+      const result = await checkHealth(addr);
+      setStatus(`Online: ${result.status} / ${result.service}`);
+      await persistAddress(addr);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Health check failed");
+    } finally {
+      setHealthLoading(false);
+    }
+  }
+
   async function handlePair() {
+    const addr = address.trim();
+    if (!addr) {
+      setStatus("Enter an agent address first");
+      return;
+    }
     setLoading(true);
     setStatus("Pairing...");
     try {
-      const result = await pairDevice(address.trim(), {
+      const result = await pairDevice(addr, {
         device_name: deviceName.trim(),
         token: token.trim(),
       });
@@ -76,7 +124,7 @@ export default function PairScreen() {
       }
 
       const credentials = {
-        agentAddress: address.trim(),
+        agentAddress: addr,
         deviceId: result.device_id,
         authToken: result.auth_token,
       };
@@ -84,7 +132,7 @@ export default function PairScreen() {
       await setCredentials(credentials);
       try {
         await savePreferences({
-          agentAddress: address.trim(),
+          agentAddress: addr,
           deviceName: deviceName.trim(),
           autoConnect: true,
         });
@@ -119,13 +167,16 @@ export default function PairScreen() {
     }
     setAddress(parsed.address);
     setToken(parsed.token);
+    persistAddress(parsed.address);
     setStatus(`Found: ${parsed.address}`);
   }
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Pair device</Text>
-      <Text style={styles.subtitle}>Use the shared pairing token from the agent.</Text>
+      <Text style={styles.subtitle}>
+        Scan the agent QR code or enter details manually.
+      </Text>
 
       {scanning && (
         <View style={styles.scannerContainer}>
@@ -134,7 +185,10 @@ export default function PairScreen() {
             barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
             onBarcodeScanned={handleBarcodeScanned}
           />
-          <Pressable style={styles.cancelScanButton} onPress={() => setScanning(false)}>
+          <Pressable
+            style={styles.cancelScanButton}
+            onPress={() => setScanning(false)}
+          >
             <Text style={styles.cancelScanText}>Cancel scan</Text>
           </Pressable>
         </View>
@@ -152,16 +206,49 @@ export default function PairScreen() {
         </View>
 
         <Text style={styles.label}>Agent address</Text>
-        <TextInput value={address} onChangeText={setAddress} style={styles.input} autoCapitalize="none" />
+        <TextInput
+          value={address}
+          onChangeText={setAddress}
+          style={styles.input}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="192.168.1.42:8787"
+        />
+
+        <Pressable
+          style={styles.healthButton}
+          onPress={handleHealthCheck}
+          disabled={healthLoading}
+        >
+          {healthLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Health check</Text>
+          )}
+        </Pressable>
 
         <Text style={styles.label}>Device name</Text>
-        <TextInput value={deviceName} onChangeText={setDeviceName} style={styles.input} autoCapitalize="none" />
+        <TextInput
+          value={deviceName}
+          onChangeText={setDeviceName}
+          style={styles.input}
+          autoCapitalize="none"
+        />
 
         <Text style={styles.label}>Pairing token</Text>
-        <TextInput value={token} onChangeText={setToken} style={styles.input} secureTextEntry />
+        <TextInput
+          value={token}
+          onChangeText={setToken}
+          style={styles.input}
+          secureTextEntry
+        />
 
-        <Pressable style={styles.button} onPress={handlePair} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Pair and save</Text>}
+        <Pressable style={styles.pairButton} onPress={handlePair} disabled={loading}>
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Pair and save</Text>
+          )}
         </Pressable>
 
         <Text style={styles.status}>{status}</Text>
@@ -249,9 +336,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#23324f",
   },
-  button: {
-    marginTop: 18,
+  healthButton: {
+    marginTop: 12,
     backgroundColor: "#19253d",
+    paddingVertical: 12,
+    alignItems: "center",
+    borderRadius: 14,
+  },
+  pairButton: {
+    marginTop: 18,
+    backgroundColor: "#4f7cff",
     paddingVertical: 14,
     alignItems: "center",
     borderRadius: 14,

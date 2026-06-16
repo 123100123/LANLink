@@ -18,7 +18,7 @@ export default function Index() {
   }
 
   if (!hasCredentials || !credentials?.deviceId) {
-    return <Redirect href="/setup" />;
+    return <Redirect href="/pair" />;
   }
 
   return <Redirect href="/(tabs)/device" />;
