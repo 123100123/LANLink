@@ -1,0 +1,353 @@
+import * as FileSystem from "expo-file-system/legacy";
+import { httpUrl } from "@/lib/api/endpoints";
+import { createId } from "@/lib/protocol/envelope";
+import { useTransferStore, type TransferItem } from "@/store/transferStore";
+
+let activeTask: FileSystem.UploadTask | null = null;
+let queueLoopRunning = false;
+let intentionallyCancelled = false;
+
+function getNextWaiting(): TransferItem | undefined {
+  return useTransferStore.getState().transfers.find(
+    (t) => t.status === "waiting"
+  );
+}
+
+function getActiveUpload(): TransferItem | undefined {
+  return useTransferStore.getState().transfers.find(
+    (t) => t.status === "uploading"
+  );
+}
+
+function isContentUri(uri: string): boolean {
+  return uri.startsWith("content://");
+}
+
+function isCachePath(uri: string): boolean {
+  const cacheDir = FileSystem.cacheDirectory ?? "";
+  return cacheDir.length > 0 && uri.startsWith(cacheDir);
+}
+
+async function getFreeDiskSpace(): Promise<number> {
+  try {
+    const free = await FileSystem.getFreeDiskStorageAsync();
+    return free;
+  } catch {
+    return -1;
+  }
+}
+
+async function prepareFileForUpload(
+  item: TransferItem
+): Promise<{ uploadUri: string; isTemp: boolean }> {
+  if (!isContentUri(item.uri)) {
+    return { uploadUri: item.uri, isTemp: false };
+  }
+
+  const freeSpace = await getFreeDiskSpace();
+  if (freeSpace >= 0 && item.size > 0 && freeSpace < item.size + 1024 * 1024) {
+    throw new Error(
+      `Not enough disk space. Need ${formatSize(item.size)}, only ${formatSize(freeSpace)} available.`
+    );
+  }
+
+  const cacheDir = FileSystem.cacheDirectory ?? "";
+  const tempPath = `${cacheDir}upload_${item.id}_${item.filename}`;
+
+  await FileSystem.copyAsync({ from: item.uri, to: tempPath });
+
+  useTransferStore.getState().updateTransfer(item.id, { tempUri: tempPath });
+
+  return { uploadUri: tempPath, isTemp: true };
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+async function cleanupTempFile(item: TransferItem): Promise<void> {
+  const tempUri = item.tempUri;
+  if (!tempUri) return;
+  try {
+    const info = await FileSystem.getInfoAsync(tempUri);
+    if (info.exists) {
+      await FileSystem.deleteAsync(tempUri, { idempotent: true });
+    }
+  } catch {
+    // best-effort cleanup
+  }
+}
+
+export function enqueueFiles(
+  files: { uri: string; name: string; size: number }[],
+  agentAddress: string,
+  authToken: string
+): number {
+  const items: TransferItem[] = files.map((f) => ({
+    id: createId("transfer"),
+    uri: f.uri,
+    filename: f.name,
+    size: f.size,
+    sentBytes: 0,
+    progress: 0,
+    status: "waiting" as const,
+    speed: 0,
+    elapsed: 0,
+    startedAt: Date.now(),
+  }));
+
+  useTransferStore.getState().addTransfers(items);
+  processQueue(agentAddress, authToken);
+  return items.length;
+}
+
+export function pauseTransfer(id: string): void {
+  const t = useTransferStore.getState().transfers.find((x) => x.id === id);
+  if (!t) return;
+
+  const active = getActiveUpload();
+  if (active && active.id === id) {
+    intentionallyCancelled = true;
+    if (activeTask) {
+      activeTask.cancelAsync();
+      activeTask = null;
+    }
+    useTransferStore.getState().updateTransfer(id, { status: "paused" });
+  } else if (t.status === "waiting") {
+    useTransferStore.getState().updateTransfer(id, { status: "paused" });
+  }
+}
+
+export function resumeTransfer(id: string, agentAddress: string, authToken: string): void {
+  const t = useTransferStore.getState().transfers.find((x) => x.id === id);
+  if (!t || t.status !== "paused") return;
+  useTransferStore.getState().updateTransfer(id, { status: "waiting" });
+  processQueue(agentAddress, authToken);
+}
+
+export function cancelTransfer(id: string): void {
+  const t = useTransferStore.getState().transfers.find((x) => x.id === id);
+  if (!t) return;
+
+  const active = getActiveUpload();
+  if (active && active.id === id) {
+    intentionallyCancelled = true;
+    if (activeTask) {
+      activeTask.cancelAsync();
+      activeTask = null;
+    }
+    useTransferStore.getState().updateTransfer(id, {
+      status: "cancelled",
+      completedAt: Date.now(),
+    });
+    cleanupTempFile(t);
+  } else {
+    useTransferStore.getState().updateTransfer(id, {
+      status: "cancelled",
+      completedAt: Date.now(),
+    });
+    cleanupTempFile(t);
+  }
+}
+
+export function retryTransfer(id: string, agentAddress: string, authToken: string): void {
+  const t = useTransferStore.getState().transfers.find((x) => x.id === id);
+  if (!t || t.status !== "failed") return;
+  useTransferStore.getState().updateTransfer(id, {
+    status: "waiting",
+    error: undefined,
+    sentBytes: 0,
+    progress: 0,
+    speed: 0,
+    elapsed: 0,
+  });
+  processQueue(agentAddress, authToken);
+}
+
+export function removeTransfer(id: string): void {
+  const t = useTransferStore.getState().transfers.find((x) => x.id === id);
+  const active = getActiveUpload();
+  if (active && active.id === id) {
+    intentionallyCancelled = true;
+    if (activeTask) {
+      activeTask.cancelAsync();
+      activeTask = null;
+    }
+  }
+  useTransferStore.getState().removeTransfer(id);
+  if (t) cleanupTempFile(t);
+}
+
+export function pauseAll(): void {
+  const store = useTransferStore.getState();
+  const active = getActiveUpload();
+
+  if (active) {
+    intentionallyCancelled = true;
+    if (activeTask) {
+      activeTask.cancelAsync();
+      activeTask = null;
+    }
+    store.updateTransfer(active.id, { status: "paused" });
+  }
+
+  for (const t of store.transfers) {
+    if (t.status === "waiting") {
+      store.updateTransfer(t.id, { status: "paused" });
+    }
+  }
+}
+
+export function resumeAll(agentAddress: string, authToken: string): void {
+  const store = useTransferStore.getState();
+  for (const t of store.transfers) {
+    if (t.status === "paused") {
+      store.updateTransfer(t.id, { status: "waiting" });
+    }
+  }
+  processQueue(agentAddress, authToken);
+}
+
+export function clearCompleted(): void {
+  const completed = useTransferStore
+    .getState()
+    .transfers.filter((t) => t.status === "completed");
+  for (const t of completed) {
+    cleanupTempFile(t);
+  }
+  useTransferStore.getState().clearCompleted();
+}
+
+async function processQueue(
+  agentAddress: string,
+  authToken: string
+): Promise<void> {
+  if (queueLoopRunning) return;
+  if (getActiveUpload()) return;
+
+  queueLoopRunning = true;
+
+  try {
+    while (true) {
+      const next = getNextWaiting();
+      if (!next) break;
+
+      useTransferStore.getState().updateTransfer(next.id, { status: "uploading" });
+      await runUpload(next, agentAddress, authToken);
+    }
+  } finally {
+    queueLoopRunning = false;
+  }
+}
+
+async function runUpload(
+  item: TransferItem,
+  agentAddress: string,
+  authToken: string
+): Promise<void> {
+  const startTime = Date.now();
+  intentionallyCancelled = false;
+
+  let uploadUri = item.uri;
+  let isTemp = false;
+
+  try {
+    const prepared = await prepareFileForUpload(item);
+    uploadUri = prepared.uploadUri;
+    isTemp = prepared.isTemp;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to prepare file";
+    useTransferStore.getState().updateTransfer(item.id, {
+      status: "failed",
+      error: msg,
+      completedAt: Date.now(),
+    });
+    return;
+  }
+
+  const task = FileSystem.createUploadTask(
+    httpUrl(agentAddress, "/transfers/upload"),
+    uploadUri,
+    {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "X-Filename": item.filename,
+        "X-Transfer-Id": item.id,
+      },
+    },
+    (progress) => {
+      const sentBytes = progress.totalBytesSent;
+      const expected = progress.totalBytesExpectedToSend;
+      const total = expected > 0 ? expected : item.size;
+      const elapsed = (Date.now() - startTime) / 1000;
+      const speed = elapsed > 0 ? sentBytes / elapsed : 0;
+
+      useTransferStore.getState().updateTransfer(item.id, {
+        sentBytes,
+        size: total,
+        progress: total > 0 ? sentBytes / total : 0,
+        speed,
+        elapsed,
+        status: "uploading",
+      });
+    }
+  );
+
+  activeTask = task;
+
+  try {
+    const result = await task.uploadAsync();
+    activeTask = null;
+
+    if (intentionallyCancelled) {
+      if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
+      return;
+    }
+
+    if (!result) {
+      useTransferStore.getState().updateTransfer(item.id, {
+        status: "cancelled",
+        completedAt: Date.now(),
+      });
+      if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
+      return;
+    }
+
+    const json = JSON.parse(result.body) as {
+      status: string;
+      path?: string;
+      received?: number;
+      error?: string;
+    };
+
+    if (json.status !== "saved") {
+      throw new Error(json.error || "Upload failed");
+    }
+
+    useTransferStore.getState().updateTransfer(item.id, {
+      status: "completed",
+      progress: 1,
+      sentBytes: item.size,
+      completedAt: Date.now(),
+      savedPath: json.path,
+    });
+
+    if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
+  } catch (err) {
+    activeTask = null;
+    if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
+    if (intentionallyCancelled) return;
+
+    const msg = err instanceof Error ? err.message : "Upload failed";
+    useTransferStore.getState().updateTransfer(item.id, {
+      status: "failed",
+      error: msg,
+      completedAt: Date.now(),
+    });
+  }
+}

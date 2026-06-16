@@ -1,6 +1,17 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useTransferStore, type TransferItem } from "@/store/transferStore";
+import {
+  pauseTransfer,
+  resumeTransfer,
+  cancelTransfer,
+  retryTransfer,
+  removeTransfer,
+  pauseAll,
+  resumeAll,
+  clearCompleted,
+} from "@/lib/transfer/transferManager";
+import { useSessionStore } from "@/store/sessionStore";
 
 function formatTime(timestamp?: number) {
   if (!timestamp) return "";
@@ -36,7 +47,27 @@ function formatETA(sentBytes: number, totalBytes: number, speed: number) {
   return `${minutes}m${secs}s`;
 }
 
+function ActionButton({
+  label,
+  color,
+  onPress,
+}: {
+  label: string;
+  color: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={[styles.actionButton, { backgroundColor: color }]} onPress={onPress}>
+      <Text style={styles.actionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function TransferCard({ transfer }: { transfer: TransferItem }) {
+  const agentAddress = useSessionStore((s) => s.agentAddress);
+  const credentials = useSessionStore((s) => s.credentials);
+  const addr = agentAddress ?? "";
+  const token = credentials?.authToken ?? "";
   const percent = Math.round(transfer.progress * 100);
 
   return (
@@ -60,7 +91,6 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
               ]}
             />
           </View>
-
           <View style={styles.statsRow}>
             <Text style={styles.meta}>
               {formatBytes(transfer.sentBytes)} / {formatBytes(transfer.size)}
@@ -69,13 +99,29 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
               <Text style={styles.meta}>{formatSpeed(transfer.speed)}</Text>
             )}
           </View>
-
           {transfer.speed > 0 && (
             <Text style={styles.meta}>
               ETA {formatETA(transfer.sentBytes, transfer.size, transfer.speed)}
             </Text>
           )}
+          <View style={styles.actions}>
+            <ActionButton label="Pause" color="#5a4a1a" onPress={() => pauseTransfer(transfer.id)} />
+            <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id)} />
+          </View>
         </>
+      )}
+
+      {transfer.status === "waiting" && (
+        <View style={styles.actions}>
+          <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id)} />
+        </View>
+      )}
+
+      {transfer.status === "paused" && (
+        <View style={styles.actions}>
+          <ActionButton label="Resume" color="#1a3a2a" onPress={() => resumeTransfer(transfer.id, addr, token)} />
+          <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id)} />
+        </View>
       )}
 
       {transfer.status === "completed" && (
@@ -90,15 +136,24 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
           {transfer.savedPath && (
             <Text style={styles.path}>{transfer.savedPath}</Text>
           )}
+          <View style={styles.actions}>
+            <ActionButton label="Remove" color="#333" onPress={() => removeTransfer(transfer.id)} />
+          </View>
         </>
       )}
 
       {transfer.status === "failed" && (
-        <Text style={styles.error}>{transfer.error ?? "Transfer failed"}</Text>
+        <>
+          <Text style={styles.error}>{transfer.error ?? "Transfer failed"}</Text>
+          <View style={styles.actions}>
+            <ActionButton label="Retry" color="#1a3a2a" onPress={() => retryTransfer(transfer.id, addr, token)} />
+            <ActionButton label="Remove" color="#333" onPress={() => removeTransfer(transfer.id)} />
+          </View>
+        </>
       )}
 
       {transfer.status === "cancelled" && (
-        <Text style={styles.meta}>Cancelled by user</Text>
+        <Text style={styles.meta}>Cancelled</Text>
       )}
     </View>
   );
@@ -106,16 +161,18 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
 
 function statusLabel(t: TransferItem, percent: number) {
   switch (t.status) {
+    case "waiting":
+      return "Waiting";
     case "uploading":
       return `${percent}%`;
+    case "paused":
+      return "Paused";
     case "completed":
       return "Done";
     case "failed":
       return "Failed";
     case "cancelled":
       return "Cancelled";
-    case "queued":
-      return "Queued";
   }
 }
 
@@ -127,35 +184,57 @@ function statusColor(status: TransferItem["status"]) {
       return { color: "#ff8a8a" };
     case "cancelled":
       return { color: "#f0c674" };
+    case "paused":
+      return { color: "#f0c674" };
+    case "waiting":
+      return { color: "#9db1d1" };
     default:
       return {};
   }
 }
 
 export default function TransfersScreen() {
-  const transfers = useTransferStore((state) => state.transfers);
-  const clearTransfers = useTransferStore((state) => state.clearTransfers);
+  const transfers = useTransferStore((s) => s.transfers);
+  const agentAddress = useSessionStore((s) => s.agentAddress);
+  const credentials = useSessionStore((s) => s.credentials);
+  const addr = agentAddress ?? "";
+  const token = credentials?.authToken ?? "";
+
+  const hasTransfers = transfers.length > 0;
+  const hasCompleted = transfers.some((t) => t.status === "completed");
+  const hasPausedOrWaiting = transfers.some(
+    (t) => t.status === "paused" || t.status === "waiting"
+  );
+  const hasUploading = transfers.some((t) => t.status === "uploading");
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.title}>Transfers</Text>
-          <Text style={styles.subtitle}>Upload history</Text>
+          <Text style={styles.subtitle}>Upload queue</Text>
         </View>
-
-        {transfers.length > 0 && (
-          <Pressable style={styles.clearButton} onPress={clearTransfers}>
-            <Text style={styles.clearButtonText}>Clear</Text>
-          </Pressable>
-        )}
       </View>
+
+      {hasTransfers && (
+        <View style={styles.globalActions}>
+          {hasUploading && (
+            <ActionButton label="Stop all" color="#5a4a1a" onPress={() => pauseAll()} />
+          )}
+          {hasPausedOrWaiting && (
+            <ActionButton label="Start all" color="#1a3a2a" onPress={() => resumeAll(addr, token)} />
+          )}
+          {hasCompleted && (
+            <ActionButton label="Clear done" color="#333" onPress={() => clearCompleted()} />
+          )}
+        </View>
+      )}
 
       {transfers.length === 0 ? (
         <View style={styles.card}>
           <Text style={styles.emptyTitle}>No transfers yet</Text>
           <Text style={styles.body}>
-            Send a file from the Device tab to see progress here.
+            Send files from the Device tab to see them here.
           </Text>
         </View>
       ) : (
@@ -176,9 +255,6 @@ const styles = StyleSheet.create({
   headerRow: {
     marginTop: 24,
     marginBottom: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
   },
   title: {
     color: "#fff",
@@ -189,15 +265,10 @@ const styles = StyleSheet.create({
     color: "#b6c2d6",
     marginTop: 8,
   },
-  clearButton: {
-    backgroundColor: "#19253d",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  clearButtonText: {
-    color: "#fff",
-    fontWeight: "700",
+  globalActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
   },
   card: {
     backgroundColor: "#121b2f",
@@ -251,6 +322,21 @@ const styles = StyleSheet.create({
   error: {
     color: "#ff8a8a",
     marginTop: 10,
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+  },
+  actionButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  actionText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 13,
   },
   emptyTitle: {
     color: "#fff",
