@@ -2,16 +2,13 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useTransferStore, type TransferItem } from "@/store/transferStore";
 import {
-  pauseTransfer,
-  resumeTransfer,
   cancelTransfer,
   retryTransfer,
   removeTransfer,
-  pauseAll,
-  resumeAll,
+  stopAll,
+  startAll,
   clearCompleted,
 } from "@/lib/transfer/transferManager";
-import { useSessionStore } from "@/store/sessionStore";
 
 function formatTime(timestamp?: number) {
   if (!timestamp) return "";
@@ -57,17 +54,16 @@ function ActionButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable style={[styles.actionButton, { backgroundColor: color }]} onPress={onPress}>
+    <Pressable
+      style={[styles.actionButton, { backgroundColor: color }]}
+      onPress={onPress}
+    >
       <Text style={styles.actionText}>{label}</Text>
     </Pressable>
   );
 }
 
 function TransferCard({ transfer }: { transfer: TransferItem }) {
-  const agentAddress = useSessionStore((s) => s.agentAddress);
-  const credentials = useSessionStore((s) => s.credentials);
-  const addr = agentAddress ?? "";
-  const token = credentials?.authToken ?? "";
   const percent = Math.round(transfer.progress * 100);
 
   return (
@@ -101,26 +97,27 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
           </View>
           {transfer.speed > 0 && (
             <Text style={styles.meta}>
-              ETA {formatETA(transfer.sentBytes, transfer.size, transfer.speed)}
+              ETA{" "}
+              {formatETA(transfer.sentBytes, transfer.size, transfer.speed)}
             </Text>
           )}
           <View style={styles.actions}>
-            <ActionButton label="Pause" color="#5a4a1a" onPress={() => pauseTransfer(transfer.id, addr, token)} />
-            <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id, addr, token)} />
+            <ActionButton
+              label="Cancel"
+              color="#5a2a2a"
+              onPress={() => cancelTransfer(transfer.id)}
+            />
           </View>
         </>
       )}
 
       {transfer.status === "waiting" && (
         <View style={styles.actions}>
-          <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id, addr, token)} />
-        </View>
-      )}
-
-      {transfer.status === "paused" && (
-        <View style={styles.actions}>
-          <ActionButton label="Resume" color="#1a3a2a" onPress={() => resumeTransfer(transfer.id, addr, token)} />
-          <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id, addr, token)} />
+          <ActionButton
+            label="Cancel"
+            color="#5a2a2a"
+            onPress={() => cancelTransfer(transfer.id)}
+          />
         </View>
       )}
 
@@ -137,23 +134,51 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
             <Text style={styles.path}>{transfer.savedPath}</Text>
           )}
           <View style={styles.actions}>
-            <ActionButton label="Remove" color="#333" onPress={() => removeTransfer(transfer.id, addr, token)} />
+            <ActionButton
+              label="Remove"
+              color="#333"
+              onPress={() => removeTransfer(transfer.id)}
+            />
           </View>
         </>
       )}
 
       {transfer.status === "failed" && (
         <>
-          <Text style={styles.error}>{transfer.error ?? "Transfer failed"}</Text>
+          <Text style={styles.error}>
+            {transfer.error ?? "Transfer failed"}
+          </Text>
           <View style={styles.actions}>
-            <ActionButton label="Retry" color="#1a3a2a" onPress={() => retryTransfer(transfer.id, addr, token)} />
-            <ActionButton label="Remove" color="#333" onPress={() => removeTransfer(transfer.id, addr, token)} />
+            <ActionButton
+              label="Retry"
+              color="#1a3a2a"
+              onPress={() => retryTransfer(transfer.id)}
+            />
+            <ActionButton
+              label="Remove"
+              color="#333"
+              onPress={() => removeTransfer(transfer.id)}
+            />
           </View>
         </>
       )}
 
       {transfer.status === "cancelled" && (
-        <Text style={styles.meta}>Cancelled</Text>
+        <>
+          <Text style={styles.meta}>Cancelled</Text>
+          <View style={styles.actions}>
+            <ActionButton
+              label="Retry"
+              color="#1a3a2a"
+              onPress={() => retryTransfer(transfer.id)}
+            />
+            <ActionButton
+              label="Remove"
+              color="#333"
+              onPress={() => removeTransfer(transfer.id)}
+            />
+          </View>
+        </>
       )}
     </View>
   );
@@ -165,8 +190,6 @@ function statusLabel(t: TransferItem, percent: number) {
       return "Waiting";
     case "uploading":
       return `${percent}%`;
-    case "paused":
-      return "Paused";
     case "completed":
       return "Done";
     case "failed":
@@ -184,8 +207,6 @@ function statusColor(status: TransferItem["status"]) {
       return { color: "#ff8a8a" };
     case "cancelled":
       return { color: "#f0c674" };
-    case "paused":
-      return { color: "#f0c674" };
     case "waiting":
       return { color: "#9db1d1" };
     default:
@@ -195,17 +216,15 @@ function statusColor(status: TransferItem["status"]) {
 
 export default function TransfersScreen() {
   const transfers = useTransferStore((s) => s.transfers);
-  const agentAddress = useSessionStore((s) => s.agentAddress);
-  const credentials = useSessionStore((s) => s.credentials);
-  const addr = agentAddress ?? "";
-  const token = credentials?.authToken ?? "";
 
   const hasTransfers = transfers.length > 0;
   const hasCompleted = transfers.some((t) => t.status === "completed");
-  const hasPausedOrWaiting = transfers.some(
-    (t) => t.status === "paused" || t.status === "waiting"
+  const hasFailedOrCancelled = transfers.some(
+    (t) => t.status === "failed" || t.status === "cancelled"
   );
-  const hasUploading = transfers.some((t) => t.status === "uploading");
+  const hasUploadingOrWaiting = transfers.some(
+    (t) => t.status === "uploading" || t.status === "waiting"
+  );
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -218,14 +237,26 @@ export default function TransfersScreen() {
 
       {hasTransfers && (
         <View style={styles.globalActions}>
-          {hasUploading && (
-            <ActionButton label="Stop all" color="#5a4a1a" onPress={() => pauseAll()} />
+          {hasUploadingOrWaiting && (
+            <ActionButton
+              label="Stop all"
+              color="#5a4a1a"
+              onPress={() => stopAll()}
+            />
           )}
-          {hasPausedOrWaiting && (
-            <ActionButton label="Start all" color="#1a3a2a" onPress={() => resumeAll(addr, token)} />
+          {hasFailedOrCancelled && (
+            <ActionButton
+              label="Start all"
+              color="#1a3a2a"
+              onPress={() => startAll()}
+            />
           )}
           {hasCompleted && (
-            <ActionButton label="Clear done" color="#333" onPress={() => clearCompleted()} />
+            <ActionButton
+              label="Clear done"
+              color="#333"
+              onPress={() => clearCompleted()}
+            />
           )}
         </View>
       )}

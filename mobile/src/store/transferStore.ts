@@ -3,7 +3,6 @@ import { create } from "zustand";
 export type TransferStatus =
   | "waiting"
   | "uploading"
-  | "paused"
   | "completed"
   | "failed"
   | "cancelled";
