@@ -1,5 +1,5 @@
 import * as DocumentPicker from "expo-document-picker";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -16,7 +16,7 @@ import { useSessionStore } from "@/store/sessionStore";
 import { useTransferStore } from "@/store/transferStore";
 import {
   httpTransfer,
-  createTransferAbortController,
+  cancelTransfer,
 } from "@/lib/transfer/httpTransfer";
 import { createId } from "@/lib/protocol/envelope";
 
@@ -32,8 +32,7 @@ export default function DeviceScreen() {
   const [busy, setBusy] = useState(false);
   const [pingStatus, setPingStatus] = useState("");
   const [uploadStatus, setUploadStatus] = useState("");
-
-  const abortRef = useRef<AbortController | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const device = devices.data?.devices.find(
     (d) => d.device_id === credentials?.deviceId
@@ -57,8 +56,9 @@ export default function DeviceScreen() {
   }
 
   async function handlePickAndUpload() {
-    if (busy && abortRef.current) {
-      abortRef.current.abort();
+    if (uploading) {
+      await cancelTransfer();
+      setUploading(false);
       setBusy(false);
       setUploadStatus("Cancelled");
       return;
@@ -83,8 +83,7 @@ export default function DeviceScreen() {
 
       const file = result.assets[0];
       transferId = createId("transfer");
-      const abortController = createTransferAbortController();
-      abortRef.current = abortController;
+      setUploading(true);
 
       addTransfer({
         id: transferId,
@@ -108,7 +107,6 @@ export default function DeviceScreen() {
         },
         {
           transferId,
-          signal: abortController.signal,
           onProgress: ({ sentBytes, totalBytes, progress, speed, elapsed }) => {
             updateTransfer(transferId, {
               sentBytes,
@@ -148,12 +146,12 @@ export default function DeviceScreen() {
 
       setUploadStatus(isCancelled ? "Cancelled" : msg);
     } finally {
+      setUploading(false);
       setBusy(false);
-      abortRef.current = null;
     }
   }
 
-  const isUploading = busy && abortRef.current !== null;
+  const isUploading = uploading;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>

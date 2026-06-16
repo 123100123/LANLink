@@ -1,14 +1,6 @@
-import type {
-  TransferStartRequest,
-  TransferStartResponse,
-  TransferChunkResponse,
-  TransferFinishResponse,
-} from "@/lib/protocol/payloads";
+import * as FileSystem from "expo-file-system/legacy";
 import { httpUrl } from "@/lib/api/endpoints";
 import { createId } from "@/lib/protocol/envelope";
-import { getExpoFile, getFileSize, readChunk, CHUNK_SIZE, type PickedFile } from "./chunker";
-
-const DEFAULT_CONCURRENCY = 6;
 
 export type TransferProgress = {
   transferId: string;
@@ -22,9 +14,6 @@ export type TransferProgress = {
 
 export type TransferOptions = {
   transferId?: string;
-  concurrency?: number;
-  chunkSize?: number;
-  signal?: AbortSignal;
   onProgress?: (progress: TransferProgress) => void;
 };
 
@@ -35,171 +24,85 @@ export type TransferResult = {
   total: number;
 };
 
+let activeTask: FileSystem.UploadTask | null = null;
+let activeStartTime = 0;
+
 export async function httpTransfer(
   address: string,
   authToken: string,
-  file: PickedFile,
+  file: { uri: string; name: string; size?: number },
   options: TransferOptions = {}
 ): Promise<TransferResult> {
   const transferId = options.transferId ?? createId("transfer");
-  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
-  const chunkSize = options.chunkSize ?? CHUNK_SIZE;
+  const totalSize = file.size ?? 0;
 
-  const expoFile = getExpoFile(file.uri);
-  const totalSize = file.size ?? getFileSize(expoFile);
+  activeStartTime = Date.now();
 
-  await httpStartTransfer(address, authToken, transferId, file.name, totalSize);
+  const task = FileSystem.createUploadTask(
+    httpUrl(address, "/transfers/upload"),
+    file.uri,
+    {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "X-Filename": file.name,
+        "X-Transfer-Id": transferId,
+      },
+    },
+    (progress) => {
+      const sentBytes = progress.totalBytesSent;
+      const expected = progress.totalBytesExpectedToSend;
+      const total = expected > 0 ? expected : totalSize;
+      const elapsed = (Date.now() - activeStartTime) / 1000;
+      const speed = elapsed > 0 ? sentBytes / elapsed : 0;
 
-  const startTime = Date.now();
-  let sentBytes = 0;
-
-  const totalChunks = Math.ceil(totalSize / chunkSize);
-  let nextIndex = 0;
-  let completedChunks = 0;
-  let failed = false;
-  let firstError: Error | null = null;
-
-  const workers = Array.from({ length: Math.min(concurrency, totalChunks) }, () =>
-    (async () => {
-      while (!failed && nextIndex < totalChunks) {
-        if (options.signal?.aborted) {
-          failed = true;
-          firstError ??= new Error("Upload cancelled");
-          return;
-        }
-
-        const index = nextIndex++;
-        const offset = index * chunkSize;
-        const length = Math.min(chunkSize, totalSize - offset);
-
-        try {
-          const data = readChunk(expoFile, offset, length);
-          await httpSendChunk(address, authToken, transferId, index, offset, data);
-        } catch (err) {
-          failed = true;
-          firstError ??= err instanceof Error ? err : new Error("Chunk upload failed");
-          return;
-        }
-
-        completedChunks++;
-        sentBytes += length;
-
-        const elapsed = (Date.now() - startTime) / 1000;
-        const speed = elapsed > 0 ? sentBytes / elapsed : 0;
-
-        options.onProgress?.({
-          transferId,
-          filename: file.name,
-          sentBytes,
-          totalBytes: totalSize,
-          progress: totalSize > 0 ? sentBytes / totalSize : 0,
-          speed,
-          elapsed,
-        });
-      }
-    })()
+      options.onProgress?.({
+        transferId,
+        filename: file.name,
+        sentBytes,
+        totalBytes: total,
+        progress: total > 0 ? sentBytes / total : 0,
+        speed,
+        elapsed,
+      });
+    }
   );
 
-  await Promise.all(workers);
+  activeTask = task;
 
-  if (failed) {
-    throw firstError ?? new Error("Upload failed");
-  }
+  try {
+    const result = await task.uploadAsync();
 
-  const finishResult = await httpFinishTransfer(address, authToken, transferId);
+    if (!result) {
+      throw new Error("Upload cancelled");
+    }
 
-  return {
-    transferId,
-    path: finishResult.path ?? "",
-    received: finishResult.received ?? totalSize,
-    total: finishResult.total ?? totalSize,
-  };
-}
+    const json = JSON.parse(result.body) as {
+      status: string;
+      path?: string;
+      received?: number;
+      error?: string;
+    };
 
-export function createTransferAbortController(): AbortController {
-  return new AbortController();
-}
+    if (json.status !== "saved") {
+      throw new Error(json.error || "Upload failed");
+    }
 
-async function httpStartTransfer(
-  address: string,
-  authToken: string,
-  transferId: string,
-  filename: string,
-  size: number
-): Promise<void> {
-  const body: TransferStartRequest = {
-    transfer_id: transferId,
-    filename,
-    size,
-  };
-
-  const response = await fetch(httpUrl(address, "/transfers/start"), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${authToken}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  const json = (await response.json()) as TransferStartResponse;
-
-  if (!response.ok || json.status !== "started") {
-    throw new Error(json.error || `Failed to start transfer (${response.status})`);
+    return {
+      transferId,
+      path: json.path ?? "",
+      received: json.received ?? totalSize,
+      total: totalSize,
+    };
+  } finally {
+    activeTask = null;
   }
 }
 
-async function httpSendChunk(
-  address: string,
-  authToken: string,
-  transferId: string,
-  index: number,
-  offset: number,
-  data: Uint8Array
-): Promise<void> {
-  const encodedId = encodeURIComponent(transferId);
-  const url = httpUrl(address, `/transfers/${encodedId}/chunks/${index}?offset=${offset}`);
-
-  const response = await fetch(url, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/octet-stream",
-      Authorization: `Bearer ${authToken}`,
-    },
-    body: data,
-  });
-
-  const json = (await response.json()) as TransferChunkResponse;
-
-  if (!response.ok) {
-    throw new Error(json.error || `Chunk ${index} failed (${response.status})`);
+export async function cancelTransfer(): Promise<void> {
+  if (activeTask) {
+    await activeTask.cancelAsync();
+    activeTask = null;
   }
-
-  if (json.status !== "chunk.received" && json.status !== "chunk.duplicate") {
-    throw new Error(`Chunk ${index} unexpected status: ${json.status}`);
-  }
-}
-
-async function httpFinishTransfer(
-  address: string,
-  authToken: string,
-  transferId: string
-): Promise<TransferFinishResponse> {
-  const encodedId = encodeURIComponent(transferId);
-  const url = httpUrl(address, `/transfers/${encodedId}/finish`);
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-    },
-  });
-
-  const json = (await response.json()) as TransferFinishResponse;
-
-  if (!response.ok || json.status !== "saved") {
-    throw new Error(json.error || `Failed to finish transfer (${response.status})`);
-  }
-
-  return json;
 }
