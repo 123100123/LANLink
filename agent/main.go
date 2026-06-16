@@ -44,6 +44,8 @@ func main() {
 
 	http.HandleFunc("/transfers/start", corsMiddleware(transferStartHandler))
 	http.HandleFunc("/transfers/upload", corsMiddleware(transferUploadHandler))
+	http.HandleFunc("/transfers/resumable/start", corsMiddleware(resumableStartHandler))
+	http.HandleFunc("/transfers/resumable/", corsMiddleware(resumableSubresourceHandler))
 	http.HandleFunc("/transfers/", corsMiddleware(transferSubresourceHandler))
 
 	address := ":" + cfg.Port
@@ -64,6 +66,8 @@ func main() {
 	log.Println("Use this token to pair a new device.")
 	log.Println("A new token will be generated after each successful pairing.")
 	log.Println("")
+
+	printPairingQR(pairingManager.Token(), cfg.Port)
 
 	err = http.ListenAndServe(address, nil)
 	if err != nil {

@@ -9,10 +9,40 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { CameraView, useCameraPermissions } from "expo-camera";
 
 import { pairDevice } from "@/lib/api/http";
 import { savePreferences } from "@/lib/storage/preferences";
 import { useSessionStore } from "@/store/sessionStore";
+
+type PairPayload = {
+  t?: string;
+  type?: string;
+  v?: number;
+  version?: number;
+  a?: string;
+  address?: string;
+  addresses?: string[];
+  tk?: string;
+  token?: string;
+};
+
+function parsePairQR(data: string): { address: string; token: string } | null {
+  try {
+    const json = JSON.parse(data) as PairPayload;
+    if (json.t !== "l" && json.type !== "lanlink_pair") return null;
+
+    const token = json.tk ?? json.token;
+    if (!token) return null;
+
+    const address = json.a ?? json.address ?? json.addresses?.[0];
+    if (!address) return null;
+
+    return { address, token };
+  } catch {
+    return null;
+  }
+}
 
 export default function PairScreen() {
   const router = useRouter();
@@ -24,6 +54,9 @@ export default function PairScreen() {
   const [address, setAddress] = useState(agentAddress);
   const [status, setStatus] = useState<string>("Ready");
   const [loading, setLoading] = useState(false);
+  const [scanning, setScanning] = useState(false);
+
+  const [permission, requestPermission] = useCameraPermissions();
 
   useEffect(() => {
     setAddress(agentAddress);
@@ -55,9 +88,7 @@ export default function PairScreen() {
           deviceName: deviceName.trim(),
           autoConnect: true,
         });
-      } catch {
-        // Credentials are already saved; preference persistence is best-effort.
-      }
+      } catch {}
       setStatus("Paired successfully");
       router.replace("/(tabs)/device");
     } catch (error) {
@@ -67,12 +98,59 @@ export default function PairScreen() {
     }
   }
 
+  async function handleScanQR() {
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) {
+        setStatus("Camera permission denied");
+        return;
+      }
+    }
+    setScanning(true);
+    setStatus("Point camera at agent QR code...");
+  }
+
+  function handleBarcodeScanned(scanned: { data: string }) {
+    setScanning(false);
+    const parsed = parsePairQR(scanned.data);
+    if (!parsed) {
+      setStatus("Invalid QR code");
+      return;
+    }
+    setAddress(parsed.address);
+    setToken(parsed.token);
+    setStatus(`Found: ${parsed.address}`);
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Pair device</Text>
       <Text style={styles.subtitle}>Use the shared pairing token from the agent.</Text>
 
+      {scanning && (
+        <View style={styles.scannerContainer}>
+          <CameraView
+            style={styles.scanner}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={handleBarcodeScanned}
+          />
+          <Pressable style={styles.cancelScanButton} onPress={() => setScanning(false)}>
+            <Text style={styles.cancelScanText}>Cancel scan</Text>
+          </Pressable>
+        </View>
+      )}
+
       <View style={styles.card}>
+        <Pressable style={styles.scanButton} onPress={handleScanQR}>
+          <Text style={styles.buttonText}>Scan agent QR code</Text>
+        </Pressable>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or enter manually</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
         <Text style={styles.label}>Agent address</Text>
         <TextInput value={address} onChangeText={setAddress} style={styles.input} autoCapitalize="none" />
 
@@ -110,12 +188,51 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 24,
   },
+  scannerContainer: {
+    marginBottom: 16,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  scanner: {
+    width: "100%",
+    height: 300,
+  },
+  cancelScanButton: {
+    backgroundColor: "#b94d4d",
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  cancelScanText: {
+    color: "#fff",
+    fontWeight: "700",
+  },
   card: {
     backgroundColor: "#121b2f",
     borderRadius: 20,
     padding: 18,
     borderWidth: 1,
     borderColor: "#1d2a44",
+  },
+  scanButton: {
+    backgroundColor: "#4f7cff",
+    paddingVertical: 14,
+    alignItems: "center",
+    borderRadius: 14,
+  },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#1d2a44",
+  },
+  dividerText: {
+    color: "#7d8aa5",
+    marginHorizontal: 12,
+    fontSize: 13,
   },
   label: {
     color: "#d9e2f2",
@@ -134,7 +251,7 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 18,
-    backgroundColor: "#4f7cff",
+    backgroundColor: "#19253d",
     paddingVertical: 14,
     alignItems: "center",
     borderRadius: 14,

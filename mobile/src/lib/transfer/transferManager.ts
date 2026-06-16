@@ -3,7 +3,8 @@ import { httpUrl } from "@/lib/api/endpoints";
 import { createId } from "@/lib/protocol/envelope";
 import { useTransferStore, type TransferItem } from "@/store/transferStore";
 
-let activeTask: FileSystem.UploadTask | null = null;
+const CHUNK_SIZE = 1024 * 1024;
+
 let queueLoopRunning = false;
 let intentionallyCancelled = false;
 
@@ -23,18 +24,19 @@ function isContentUri(uri: string): boolean {
   return uri.startsWith("content://");
 }
 
-function isCachePath(uri: string): boolean {
-  const cacheDir = FileSystem.cacheDirectory ?? "";
-  return cacheDir.length > 0 && uri.startsWith(cacheDir);
-}
-
 async function getFreeDiskSpace(): Promise<number> {
   try {
-    const free = await FileSystem.getFreeDiskStorageAsync();
-    return free;
+    return await FileSystem.getFreeDiskStorageAsync();
   } catch {
     return -1;
   }
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 async function prepareFileForUpload(
@@ -53,19 +55,9 @@ async function prepareFileForUpload(
 
   const cacheDir = FileSystem.cacheDirectory ?? "";
   const tempPath = `${cacheDir}upload_${item.id}_${item.filename}`;
-
   await FileSystem.copyAsync({ from: item.uri, to: tempPath });
-
   useTransferStore.getState().updateTransfer(item.id, { tempUri: tempPath });
-
   return { uploadUri: tempPath, isTemp: true };
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
 async function cleanupTempFile(item: TransferItem): Promise<void> {
@@ -76,9 +68,135 @@ async function cleanupTempFile(item: TransferItem): Promise<void> {
     if (info.exists) {
       await FileSystem.deleteAsync(tempUri, { idempotent: true });
     }
-  } catch {
-    // best-effort cleanup
+  } catch {}
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
   }
+  return bytes.buffer;
+}
+
+async function readChunk(
+  uri: string,
+  offset: number,
+  length: number
+): Promise<ArrayBuffer> {
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+    position: offset,
+    length,
+  });
+  return base64ToArrayBuffer(base64);
+}
+
+async function apiStart(
+  address: string,
+  token: string,
+  transferId: string,
+  filename: string,
+  size: number
+): Promise<{ received: number }> {
+  const resp = await fetch(httpUrl(address, "/transfers/resumable/start"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ transfer_id: transferId, filename, size }),
+  });
+  const json = (await resp.json()) as any;
+  if (!resp.ok) throw new Error(json.error || "Failed to start transfer");
+  return { received: json.received ?? 0 };
+}
+
+async function apiStatus(
+  address: string,
+  token: string,
+  transferId: string
+): Promise<{ received: number; total: number }> {
+  const resp = await fetch(
+    httpUrl(
+      address,
+      `/transfers/resumable/${encodeURIComponent(transferId)}/status`
+    ),
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const json = (await resp.json()) as any;
+  if (!resp.ok) throw new Error(json.error || "Failed to get status");
+  return { received: json.received ?? 0, total: json.total ?? 0 };
+}
+
+async function apiChunk(
+  address: string,
+  token: string,
+  transferId: string,
+  offset: number,
+  data: ArrayBuffer
+): Promise<{ received: number; total: number }> {
+  const resp = await fetch(
+    httpUrl(
+      address,
+      `/transfers/resumable/${encodeURIComponent(transferId)}/chunk?offset=${offset}`
+    ),
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        Authorization: `Bearer ${token}`,
+      },
+      body: data,
+    }
+  );
+  const json = (await resp.json()) as any;
+  if (resp.status === 409) {
+    const expected = json.expected_offset ?? json.received ?? 0;
+    throw { offsetMismatch: true, expected };
+  }
+  if (!resp.ok) throw new Error(json.error || "Chunk failed");
+  return { received: json.received ?? 0, total: json.total ?? 0 };
+}
+
+async function apiFinish(
+  address: string,
+  token: string,
+  transferId: string
+): Promise<{ path: string }> {
+  const resp = await fetch(
+    httpUrl(
+      address,
+      `/transfers/resumable/${encodeURIComponent(transferId)}/finish`
+    ),
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  const json = (await resp.json()) as any;
+  if (!resp.ok) throw new Error(json.error || "Finish failed");
+  return { path: json.path ?? "" };
+}
+
+async function apiCancel(
+  address: string,
+  token: string,
+  transferId: string
+): Promise<void> {
+  try {
+    await fetch(
+      httpUrl(
+        address,
+        `/transfers/resumable/${encodeURIComponent(transferId)}`
+      ),
+      {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+  } catch {}
 }
 
 export function enqueueFiles(
@@ -104,58 +222,75 @@ export function enqueueFiles(
   return items.length;
 }
 
-export function pauseTransfer(id: string): void {
+export function pauseTransfer(
+  id: string,
+  _agentAddress?: string,
+  _authToken?: string
+): void {
   const t = useTransferStore.getState().transfers.find((x) => x.id === id);
   if (!t) return;
 
   const active = getActiveUpload();
   if (active && active.id === id) {
     intentionallyCancelled = true;
-    if (activeTask) {
-      activeTask.cancelAsync();
-      activeTask = null;
-    }
     useTransferStore.getState().updateTransfer(id, { status: "paused" });
   } else if (t.status === "waiting") {
     useTransferStore.getState().updateTransfer(id, { status: "paused" });
   }
 }
 
-export function resumeTransfer(id: string, agentAddress: string, authToken: string): void {
+export function resumeTransfer(
+  id: string,
+  agentAddress: string,
+  authToken: string
+): void {
   const t = useTransferStore.getState().transfers.find((x) => x.id === id);
   if (!t || t.status !== "paused") return;
   useTransferStore.getState().updateTransfer(id, { status: "waiting" });
   processQueue(agentAddress, authToken);
 }
 
-export function cancelTransfer(id: string): void {
+export function cancelTransfer(
+  id: string,
+  agentAddress?: string,
+  authToken?: string
+): void {
   const t = useTransferStore.getState().transfers.find((x) => x.id === id);
   if (!t) return;
 
   const active = getActiveUpload();
   if (active && active.id === id) {
     intentionallyCancelled = true;
-    if (activeTask) {
-      activeTask.cancelAsync();
-      activeTask = null;
-    }
     useTransferStore.getState().updateTransfer(id, {
       status: "cancelled",
       completedAt: Date.now(),
     });
+    if (agentAddress && authToken) {
+      apiCancel(agentAddress, authToken, t.id);
+    }
     cleanupTempFile(t);
   } else {
     useTransferStore.getState().updateTransfer(id, {
       status: "cancelled",
       completedAt: Date.now(),
     });
+    if (agentAddress && authToken) {
+      apiCancel(agentAddress, authToken, t.id);
+    }
     cleanupTempFile(t);
   }
 }
 
-export function retryTransfer(id: string, agentAddress: string, authToken: string): void {
+export function retryTransfer(
+  id: string,
+  agentAddress: string,
+  authToken: string
+): void {
   const t = useTransferStore.getState().transfers.find((x) => x.id === id);
   if (!t || t.status !== "failed") return;
+  if (agentAddress && authToken) {
+    apiCancel(agentAddress, authToken, t.id);
+  }
   useTransferStore.getState().updateTransfer(id, {
     status: "waiting",
     error: undefined,
@@ -167,14 +302,17 @@ export function retryTransfer(id: string, agentAddress: string, authToken: strin
   processQueue(agentAddress, authToken);
 }
 
-export function removeTransfer(id: string): void {
+export function removeTransfer(
+  id: string,
+  agentAddress?: string,
+  authToken?: string
+): void {
   const t = useTransferStore.getState().transfers.find((x) => x.id === id);
   const active = getActiveUpload();
   if (active && active.id === id) {
     intentionallyCancelled = true;
-    if (activeTask) {
-      activeTask.cancelAsync();
-      activeTask = null;
+    if (agentAddress && authToken && t) {
+      apiCancel(agentAddress, authToken, t.id);
     }
   }
   useTransferStore.getState().removeTransfer(id);
@@ -187,10 +325,6 @@ export function pauseAll(): void {
 
   if (active) {
     intentionallyCancelled = true;
-    if (activeTask) {
-      activeTask.cancelAsync();
-      activeTask = null;
-    }
     store.updateTransfer(active.id, { status: "paused" });
   }
 
@@ -234,16 +368,17 @@ async function processQueue(
     while (true) {
       const next = getNextWaiting();
       if (!next) break;
-
-      useTransferStore.getState().updateTransfer(next.id, { status: "uploading" });
-      await runUpload(next, agentAddress, authToken);
+      useTransferStore
+        .getState()
+        .updateTransfer(next.id, { status: "uploading" });
+      await runResumableUpload(next, agentAddress, authToken);
     }
   } finally {
     queueLoopRunning = false;
   }
 }
 
-async function runUpload(
+async function runResumableUpload(
   item: TransferItem,
   agentAddress: string,
   authToken: string
@@ -268,78 +403,88 @@ async function runUpload(
     return;
   }
 
-  const task = FileSystem.createUploadTask(
-    httpUrl(agentAddress, "/transfers/upload"),
-    uploadUri,
-    {
-      httpMethod: "POST",
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers: {
-        Authorization: `Bearer ${authToken}`,
-        "X-Filename": item.filename,
-        "X-Transfer-Id": item.id,
-      },
-    },
-    (progress) => {
-      const sentBytes = progress.totalBytesSent;
-      const expected = progress.totalBytesExpectedToSend;
-      const total = expected > 0 ? expected : item.size;
+  try {
+    await apiStart(
+      agentAddress,
+      authToken,
+      item.id,
+      item.filename,
+      item.size
+    );
+  } catch (err) {
+    const msg =
+      err instanceof Error ? err.message : "Failed to start transfer";
+    useTransferStore.getState().updateTransfer(item.id, {
+      status: "failed",
+      error: msg,
+      completedAt: Date.now(),
+    });
+    if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
+    return;
+  }
+
+  let offset = 0;
+  try {
+    const status = await apiStatus(agentAddress, authToken, item.id);
+    offset = status.received;
+  } catch {}
+
+  try {
+    while (offset < item.size) {
+      if (intentionallyCancelled) break;
+
+      const toRead = Math.min(CHUNK_SIZE, item.size - offset);
+      const ab = await readChunk(uploadUri, offset, toRead);
+
+      if (intentionallyCancelled) break;
+
+      try {
+        const result = await apiChunk(
+          agentAddress,
+          authToken,
+          item.id,
+          offset,
+          ab
+        );
+        offset = result.received;
+      } catch (err: any) {
+        if (err?.offsetMismatch) {
+          offset = err.expected;
+          continue;
+        }
+        throw err;
+      }
+
       const elapsed = (Date.now() - startTime) / 1000;
-      const speed = elapsed > 0 ? sentBytes / elapsed : 0;
+      const speed = elapsed > 0 ? offset / elapsed : 0;
 
       useTransferStore.getState().updateTransfer(item.id, {
-        sentBytes,
-        size: total,
-        progress: total > 0 ? sentBytes / total : 0,
+        sentBytes: offset,
+        size: item.size,
+        progress: item.size > 0 ? offset / item.size : 0,
         speed,
         elapsed,
         status: "uploading",
       });
     }
-  );
-
-  activeTask = task;
-
-  try {
-    const result = await task.uploadAsync();
-    activeTask = null;
 
     if (intentionallyCancelled) {
       if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
       return;
     }
 
-    if (!result) {
-      useTransferStore.getState().updateTransfer(item.id, {
-        status: "cancelled",
-        completedAt: Date.now(),
-      });
-      if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
-      return;
-    }
-
-    const json = JSON.parse(result.body) as {
-      status: string;
-      path?: string;
-      received?: number;
-      error?: string;
-    };
-
-    if (json.status !== "saved") {
-      throw new Error(json.error || "Upload failed");
-    }
+    const result = await apiFinish(agentAddress, authToken, item.id);
 
     useTransferStore.getState().updateTransfer(item.id, {
       status: "completed",
       progress: 1,
       sentBytes: item.size,
       completedAt: Date.now(),
-      savedPath: json.path,
+      savedPath: result.path,
     });
 
     if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
   } catch (err) {
-    activeTask = null;
     if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
     if (intentionallyCancelled) return;
 

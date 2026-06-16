@@ -105,22 +105,22 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
             </Text>
           )}
           <View style={styles.actions}>
-            <ActionButton label="Pause" color="#5a4a1a" onPress={() => pauseTransfer(transfer.id)} />
-            <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id)} />
+            <ActionButton label="Pause" color="#5a4a1a" onPress={() => pauseTransfer(transfer.id, addr, token)} />
+            <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id, addr, token)} />
           </View>
         </>
       )}
 
       {transfer.status === "waiting" && (
         <View style={styles.actions}>
-          <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id)} />
+          <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id, addr, token)} />
         </View>
       )}
 
       {transfer.status === "paused" && (
         <View style={styles.actions}>
           <ActionButton label="Resume" color="#1a3a2a" onPress={() => resumeTransfer(transfer.id, addr, token)} />
-          <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id)} />
+          <ActionButton label="Cancel" color="#5a2a2a" onPress={() => cancelTransfer(transfer.id, addr, token)} />
         </View>
       )}
 
@@ -137,7 +137,7 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
             <Text style={styles.path}>{transfer.savedPath}</Text>
           )}
           <View style={styles.actions}>
-            <ActionButton label="Remove" color="#333" onPress={() => removeTransfer(transfer.id)} />
+            <ActionButton label="Remove" color="#333" onPress={() => removeTransfer(transfer.id, addr, token)} />
           </View>
         </>
       )}
@@ -147,7 +147,7 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
           <Text style={styles.error}>{transfer.error ?? "Transfer failed"}</Text>
           <View style={styles.actions}>
             <ActionButton label="Retry" color="#1a3a2a" onPress={() => retryTransfer(transfer.id, addr, token)} />
-            <ActionButton label="Remove" color="#333" onPress={() => removeTransfer(transfer.id)} />
+            <ActionButton label="Remove" color="#333" onPress={() => removeTransfer(transfer.id, addr, token)} />
           </View>
         </>
       )}

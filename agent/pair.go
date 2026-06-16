@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/123100123/lanlink/internal/auth"
+	"github.com/123100123/lanlink/internal/config"
 	"github.com/123100123/lanlink/internal/paths"
 	"github.com/123100123/lanlink/internal/store"
 	"github.com/123100123/lanlink/protocol"
@@ -131,5 +132,12 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("New pairing token:", pairingManager.Token())
+	newToken := pairingManager.Token()
+	log.Println("New pairing token:", newToken)
+	log.Println("Use this token to pair a new device.")
+	log.Println("A new token will be generated after each successful pairing.")
+	log.Println("")
+
+	cfg := config.Load()
+	printPairingQR(newToken, cfg.Port)
 }

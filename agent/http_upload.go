@@ -125,11 +125,11 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("upload: saved %s (%d bytes) as %s", safeName, written, finalPath)
 
 	writeUploadJSON(w, http.StatusOK, map[string]any{
-		"status":     "saved",
+		"status":      "saved",
 		"transfer_id": transferID,
-		"filename":   safeName,
-		"path":       finalPath,
-		"received":   written,
+		"filename":    safeName,
+		"path":        finalPath,
+		"received":    written,
 	})
 }
 
