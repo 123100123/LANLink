@@ -1,48 +1,66 @@
 # LANLink
 
-LANLink is a local network communication framework written in Go.
+LANLink is a local network file transfer and communication system.
 
-It enables trusted devices to pair, authenticate, and communicate over a LAN, Wi-Fi network, or mobile hotspot.
+It enables trusted devices to pair, authenticate, and transfer files over a LAN, Wi-Fi network, or mobile hotspot.
 
-The project uses WebSockets for authenticated control messages and HTTP for high-throughput file transfer. It is designed as a learning-focused networking platform and a foundation for building secure local device-to-device communication systems.
+The system has three components: a Go backend agent, a Go CLI client, and a React Native / Expo mobile app. WebSocket handles the authenticated control plane. HTTP handles file transfer data.
+
+---
+
+## Components
+
+### Go Agent
+
+The backend agent runs on a Linux/Mac/Windows machine or Termux on Android. It listens for connections, manages pairing, authenticates devices, and receives file uploads.
+
+### Go CLI
+
+A terminal client for pairing, health checks, ping, messaging, and high-speed file transfer. Designed for Termux on Android and desktop terminals.
+
+### React Native Mobile App
+
+An Expo Router app for Android and iOS. Supports QR-code pairing, file selection, upload queue with progress/speed/ETA, and device management.
 
 ---
 
 ## Features
 
-### Implemented
+### Agent
 
-* Device pairing
-* Persistent authentication
-* HTTP health endpoint
-* Authenticated WebSocket sessions
-* Ping/Pong latency measurement
-* Direct messaging
-* High-speed HTTP file transfer
-* Chunked large-file transfer
-* Parallel chunk uploads
-* Upload progress tracking
-* Safe file storage with overwrite protection
+* Device pairing with rotating tokens
 * Persistent device storage
+* Authenticated WebSocket sessions
+* Ping/pong latency measurement
+* Direct messaging
 * Automatic LAN address detection
-* Configurable transfer chunk size
-* Configurable parallel transfer workers
+* Terminal QR code for mobile pairing
+* Configurable transfer workers and chunk size
 
-### Planned
+### CLI
 
-* Reliability and reconnect logic
-* LAN discovery
-* Device management
-* Transfer retry/resume support
-* Advanced security features
-* Improved transfer benchmarking tools
+* Pair, health, ping, devices, message commands
+* High-speed parallel HTTP file upload
+* Raw binary chunk transfer (no base64 overhead)
+
+### Mobile App
+
+* QR code scanning for instant pairing
+* Manual address/token pairing
+* Multi-file queue with automatic sequential upload
+* Live progress, speed (MB/s), and ETA
+* Cancel active upload
+* Retry failed or cancelled transfers
+* Stop all / Start all / Clear completed
+* Native streaming upload (no JS memory overhead)
+* Disk space check before copying content:// URIs
 
 ---
 
 ## Architecture
 
 ```text
-CLI / Remote Device
+Mobile App / CLI
         │
         ├── WebSocket
         │       ├── Authentication
@@ -50,18 +68,84 @@ CLI / Remote Device
         │       └── Direct Messages
         │
         └── HTTP
-                └── Parallel File Transfer
+                ├── CLI Parallel Chunk Upload
+                ├── Mobile Streaming Upload
+                └── Resumable Upload
                         │
                         ▼
-                  Linux Agent
+                  Go Agent (Linux / Termux)
 ```
 
-LANLink separates control messages from file transfer data:
+* WebSocket is used for the authenticated control plane.
+* HTTP is used for all file transfer data.
+* CLI uses parallel chunked uploads for maximum throughput.
+* Mobile uses a single streaming upload per file via Expo FileSystem native upload task.
 
-* WebSocket is used for authenticated communication, ping/pong, and direct messages.
-* HTTP is used for raw binary file chunks.
-* File chunks are uploaded in parallel using multiple HTTP workers.
-* The agent writes chunks safely using offsets and protects existing files from being overwritten.
+---
+
+## API Endpoints
+
+### Health
+
+```text
+GET /health
+```
+
+Returns agent status.
+
+### Pairing
+
+```text
+POST /pair
+```
+
+Pair a new device with a pairing token. Returns device ID and auth token.
+
+### Devices
+
+```text
+GET /devices
+```
+
+List paired devices. Requires `Authorization: Bearer <token>`.
+
+### WebSocket
+
+```text
+GET /ws
+```
+
+Authenticated WebSocket connection for control messages.
+
+### CLI Chunked Transfer
+
+```text
+POST   /transfers/start
+PUT    /transfers/{id}/chunks/{index}?offset={offset}
+POST   /transfers/{id}/finish
+```
+
+Three-stage transfer: start session, upload raw binary chunks in parallel, finalize and save.
+
+### Mobile Streaming Upload
+
+```text
+POST /transfers/upload
+```
+
+Single-request streaming upload. Headers: `X-Filename`, `X-Transfer-Id`, `Authorization`. Body: raw file bytes.
+
+### Resumable Transfer
+
+```text
+POST   /transfers/resumable/start
+GET    /transfers/resumable/{id}/status
+PUT    /transfers/resumable/{id}/chunk?offset={offset}
+POST   /transfers/resumable/{id}/finish
+DELETE /transfers/resumable/{id}
+```
+
+Offset-based resumable upload. Supports pause at the backend level (state kept in memory).
 
 ---
 
@@ -81,67 +165,44 @@ LANLink agent listening on :8787
 Available addresses:
 127.0.0.1:8787
 192.168.1.42:8787
+
+Pairing token: 123456
+Use this token to pair a new device.
+Scan this QR code from the mobile app to pair:
+<QR code>
 ```
 
-Use the LAN address when connecting from another device on the same network.
-
----
-
-### Pair Device
+### Pair via CLI
 
 ```bash
 go run ./cli pair 192.168.1.42:8787 123456
 ```
 
-Pairing stores local credentials so future commands can authenticate automatically.
+### Pair via Mobile
 
----
+1. Install the app from `mobile/`
+2. Enter the agent address manually, or scan the terminal QR code
+3. Enter the pairing token
+4. Tap "Pair and save"
 
-### Check Health
-
-```bash
-go run ./cli health 192.168.1.42:8787
-```
-
----
-
-### List Devices
-
-```bash
-go run ./cli devices 192.168.1.42:8787
-```
-
----
-
-### Ping Agent
-
-```bash
-go run ./cli ping 192.168.1.42:8787
-```
-
----
-
-### Send Message
-
-```bash
-go run ./cli message 192.168.1.42:8787 "hello from termux"
-```
-
----
-
-### Transfer Files
+### Send Files via CLI
 
 ```bash
 go run ./cli send-file 192.168.1.42:8787 ./large.zip
 ```
 
-The `send-file` command uses the high-speed HTTP transfer path. Files are split into chunks, uploaded in parallel, and reassembled by the agent.
+### Send Files via Mobile
+
+1. Open the Device tab
+2. Tap "Send file"
+3. Select one or more files
+4. Monitor progress in the Transfers tab
 
 ---
 
 ## Build
 
-Build the agent and CLI:
+### Go Agent and CLI
 
 ```bash
 mkdir -p bin
@@ -149,35 +210,27 @@ go build -o bin/agent ./agent
 go build -o bin/lanlink ./cli
 ```
 
-Run the agent:
+### Mobile App
 
 ```bash
-./bin/agent
+cd mobile
+npm install
+npx expo start
 ```
 
-Use the CLI:
-
-```bash
-./bin/lanlink health 192.168.1.42:8787
-./bin/lanlink pair 192.168.1.42:8787 123456
-./bin/lanlink send-file 192.168.1.42:8787 ./large.zip
-```
+Scan the QR code with Expo Go on your device.
 
 ---
 
 ## Configuration
 
-LANLink can be configured using a `.env` file.
-
-Example:
+LANLink can be configured using a `.env` file in the project root.
 
 ```env
 LANLINK_PORT=8787
-TRANSFER_CHUNK_SIZE=524288
+TRANSFER_CHUNK_SIZE=1048576
 TRANSFER_MAX_IN_FLIGHT_CHUNKS=16
 ```
-
-### Options
 
 | Variable                        | Description                           | Default |
 | ------------------------------- | ------------------------------------- | ------- |
@@ -185,47 +238,13 @@ TRANSFER_MAX_IN_FLIGHT_CHUNKS=16
 | `TRANSFER_CHUNK_SIZE`           | File chunk size in bytes              | `65536` |
 | `TRANSFER_MAX_IN_FLIGHT_CHUNKS` | Number of parallel HTTP chunk uploads | `16`    |
 
-Recommended transfer settings:
+Recommended transfer settings for LAN:
 
 ```text
-512 KB × 16 workers
 1 MB × 16 workers
-1 MB × 32 workers
 2 MB × 16 workers
 2 MB × 32 workers
 ```
-
-Example:
-
-```env
-TRANSFER_CHUNK_SIZE=1048576
-TRANSFER_MAX_IN_FLIGHT_CHUNKS=32
-```
-
-Very high worker counts may reduce performance on some systems because of CPU usage, memory pressure, socket overhead, router limits, or storage speed.
-
----
-
-## File Transfer Design
-
-LANLink file transfer uses three HTTP stages:
-
-```text
-POST /transfers/start
-PUT  /transfers/{id}/chunks/{index}?offset={offset}
-POST /transfers/{id}/finish
-```
-
-The transfer flow is:
-
-1. The CLI starts a transfer session.
-2. The CLI splits the file into chunks.
-3. Multiple workers upload chunks in parallel.
-4. The agent writes each chunk at its correct file offset.
-5. The CLI asks the agent to finalize the transfer.
-6. The agent verifies the received size and safely stores the final file.
-
-This avoids base64 encoding and JSON payload overhead for file data. File bytes are sent as raw HTTP request bodies.
 
 ---
 
@@ -233,27 +252,75 @@ This avoids base64 encoding and JSON payload overhead for file data. File bytes 
 
 ```text
 lanlink/
-
-├── agent/
-│   ├── main.go
-│   ├── http_transfer.go
-│   └── ws/
+├── agent/                          # Go backend agent
+│   ├── main.go                     # Entry point, route registration
+│   ├── auth.go                     # Bearer token authentication
+│   ├── pair.go                     # Device pairing handler
+│   ├── pairing_qr.go               # Terminal QR code generation
+│   ├── pairing_state.go            # Pairing manager state
+│   ├── health.go                   # Health endpoint
+│   ├── devices.go                  # Device list endpoint
+│   ├── http_transfer.go            # CLI chunked transfer handlers
+│   ├── http_upload.go              # Mobile streaming upload handler
+│   ├── http_resumable_transfer.go  # Resumable transfer handlers
+│   └── ws/                         # WebSocket handlers
+│       ├── handler.go              # Connection upgrade
+│       ├── auth.go                 # WebSocket authentication
+│       ├── session.go              # Message routing loop
+│       ├── messages.go             # Ping, hello, direct message
+│       ├── file_transfer.go        # WS file transfer (legacy)
+│       └── state.go                # WS transfer manager
 │
-├── cli/
-│   ├── main.go
-│   └── send_file.go
+├── cli/                            # Go CLI client
+│   ├── main.go                     # Command routing
+│   ├── pair.go                     # Pair command
+│   ├── health.go                   # Health command
+│   ├── ping.go                     # Ping command
+│   ├── devices.go                  # Devices command
+│   ├── send_file.go                # Parallel file upload
+│   └── ws/                         # WebSocket client
+│       ├── client.go               # WS connection
+│       ├── auth.go                 # WS auth
+│       └── messages.go             # Message handling
 │
-├── internal/
-│   ├── auth/
-│   ├── clientconfig/
-│   ├── config/
-│   ├── network/
-│   ├── paths/
-│   ├── store/
-│   ├── transfer/
-│   └── wsutil/
+├── mobile/                         # React Native / Expo app
+│   ├── app/                        # Expo Router screens
+│   │   ├── _layout.tsx             # Root layout
+│   │   ├── index.tsx               # Entry redirect
+│   │   ├── setup.tsx               # Agent address entry
+│   │   ├── pair.tsx                # Manual + QR pairing
+│   │   └── (tabs)/                 # Main tab screens
+│   │       ├── _layout.tsx         # Tab bar layout
+│   │       ├── device.tsx          # Device info + send file
+│   │       ├── transfers.tsx       # Upload queue + progress
+│   │       └── settings.tsx        # Agent address + credentials
+│   ├── src/
+│   │   ├── hooks/                  # React hooks
+│   │   ├── lib/                    # Core logic
+│   │   │   ├── api/                # HTTP client + endpoints
+│   │   │   ├── protocol/           # Message schema + types
+│   │   │   ├── socket/             # WebSocket client
+│   │   │   ├── storage/            # SecureStore + AsyncStorage
+│   │   │   └── transfer/           # Upload manager
+│   │   └── store/                  # Zustand stores
+│   └── package.json
 │
-├── protocol/
+├── internal/                       # Shared Go packages
+│   ├── auth/                       # Token generation
+│   ├── clientconfig/               # CLI credential storage
+│   ├── config/                     # Environment config
+│   ├── network/                    # LAN IP detection
+│   ├── pairing/                    # Pairing token manager
+│   ├── paths/                      # File paths
+│   ├── store/                      # Device JSON store
+│   ├── transfer/                   # Chunked transfer manager
+│   └── wsutil/                     # WebSocket utilities
+│
+├── protocol/                       # Shared protocol types
+│   ├── messages.go                 # Message envelope
+│   ├── file_chunk.go               # WS file transfer types
+│   └── http_transfer.go            # HTTP transfer types
+│
 ├── go.mod
 ├── go.sum
 └── README.md
@@ -261,16 +328,42 @@ lanlink/
 
 ---
 
-## Development Notes
+## Mobile App Details
 
-Run formatting and tests before committing:
+### Tech Stack
+
+* Expo SDK 54
+* Expo Router 6
+* React Native 0.81
+* Zustand (state management)
+* TanStack Query (server state)
+* expo-camera (QR scanning)
+* expo-file-system (native upload)
+* expo-document-picker (file selection)
+* expo-secure-store (credential storage)
+
+### Upload System
+
+The mobile app uses `FileSystem.createUploadTask` from `expo-file-system/legacy` to stream files directly from the device to the agent via `POST /transfers/upload`. This avoids loading the entire file into JavaScript memory.
+
+For `content://` URIs (from document picker with `copyToCacheDirectory: false`), the app checks available disk space before copying to a temp file, and cleans up after upload.
+
+### Transfer Queue
+
+Files are added to a FIFO queue. One file uploads at a time. When an upload completes, the next waiting file starts automatically.
+
+States: `waiting` → `uploading` → `completed` | `failed` | `cancelled`
+
+---
+
+## Development
 
 ```bash
 go fmt ./...
 go test ./...
 ```
 
-Build both binaries:
+Build and verify:
 
 ```bash
 mkdir -p bin
@@ -286,6 +379,7 @@ bin/
 data/
 received/
 testdata/
+mobile/node_modules/
 *.bin
 ```
 
@@ -293,10 +387,8 @@ testdata/
 
 ## Version
 
-Current version:
-
 ```text
-v0.4.0-dev
+v0.5.0-dev
 ```
 
 ---

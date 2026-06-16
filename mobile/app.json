@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "LANLink",
+    "slug": "lanlink-mobile",
+    "scheme": "lanlink",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["android", "ios", "web"],
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": ["**/*"]
+  }
+}

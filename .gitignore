@@ -68,3 +68,4 @@ received/
 .agents/
 test.*
 *.bin
+*.txt

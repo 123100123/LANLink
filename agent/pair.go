@@ -2,15 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/123100123/lanlink/internal/auth"
+	"github.com/123100123/lanlink/internal/config"
 	"github.com/123100123/lanlink/internal/paths"
 	"github.com/123100123/lanlink/internal/store"
 	"github.com/123100123/lanlink/protocol"
 )
-
-const pairingToken = "123456"
 
 func pairHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -36,7 +36,18 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	if req.Token != pairingToken {
+	if pairingManager == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+
+		json.NewEncoder(w).Encode(protocol.PairResponse{
+			Status: "error",
+			Error:  "pairing manager is not initialized",
+		})
+
+		return
+	}
+
+	if !pairingManager.Validate(req.Token) {
 		w.WriteHeader(http.StatusUnauthorized)
 
 		json.NewEncoder(w).Encode(protocol.PairResponse{
@@ -67,9 +78,14 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deviceName := req.DeviceName
+	if deviceName == "" {
+		deviceName = "unknown-device"
+	}
+
 	device := store.Device{
 		DeviceID:   "device_" + deviceIDRaw,
-		DeviceName: req.DeviceName,
+		DeviceName: deviceName,
 		AuthToken:  authToken,
 	}
 
@@ -108,5 +124,20 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 			"failed to encode response",
 			http.StatusInternalServerError,
 		)
+		return
 	}
+
+	if err := pairingManager.Rotate(); err != nil {
+		log.Println("failed to rotate pairing token:", err)
+		return
+	}
+
+	newToken := pairingManager.Token()
+	log.Println("New pairing token:", newToken)
+	log.Println("Use this token to pair a new device.")
+	log.Println("A new token will be generated after each successful pairing.")
+	log.Println("")
+
+	cfg := config.Load()
+	printPairingQR(newToken, cfg.Port)
 }
