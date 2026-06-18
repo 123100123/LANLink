@@ -86,23 +86,68 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	if dashID == "" {
 		dashID = safeName
 	}
-	dashboard.AddTransfer(dashID, safeName, 0)
+
+	var totalSize int64
+	if r.ContentLength > 0 {
+		totalSize = r.ContentLength
+	} else if hs := r.Header.Get("X-File-Size"); hs != "" {
+		if v, err := strconv.ParseInt(hs, 10, 64); err == nil && v > 0 {
+			totalSize = v
+		}
+	}
+
+	dashboard.AddTransfer(dashID, safeName, totalSize)
 	startTime := time.Now()
 
-	buf := make([]byte, 256*1024)
-	written, err := io.CopyBuffer(out, r.Body, buf)
+	buf := make([]byte, 512*1024)
+	var written int64
+	lastDashUpdate := startTime
 
-	if err != nil {
-		out.Close()
-		os.Remove(tempPath)
-		dashboard.FailTransfer(dashID, "write failed")
-		log.Println("upload: write failed:", err)
-		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
-			"status": "error",
-			"error":  "write failed",
-		})
-		return
+	for {
+		n, readErr := r.Body.Read(buf)
+
+		if n > 0 {
+			wn, writeErr := out.Write(buf[:n])
+			if writeErr != nil {
+				out.Close()
+				os.Remove(tempPath)
+				dashboard.FailTransfer(dashID, "write failed")
+				log.Println("upload: write failed:", writeErr)
+				writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
+					"status": "error",
+					"error":  "write failed",
+				})
+				return
+			}
+
+			written += int64(wn)
+
+			if time.Since(lastDashUpdate) >= 500*time.Millisecond {
+				speed := calcSpeed(written, startTime)
+				dashboard.UpdateTransfer(dashID, written, speed)
+				lastDashUpdate = time.Now()
+			}
+		}
+
+		if readErr == io.EOF {
+			break
+		}
+
+		if readErr != nil {
+			out.Close()
+			os.Remove(tempPath)
+			dashboard.FailTransfer(dashID, "read failed")
+			log.Println("upload: read failed:", readErr)
+			writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
+				"status": "error",
+				"error":  "read failed",
+			})
+			return
+		}
 	}
+
+	finalSpeed := calcSpeed(written, startTime)
+	dashboard.UpdateTransfer(dashID, written, finalSpeed)
 
 	if err := out.Sync(); err != nil {
 		out.Close()
@@ -140,13 +185,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	dashboard.CompleteTransfer(dashID, finalPath)
 
-	elapsed := time.Since(startTime).Seconds()
-	speed := int64(0)
-	if elapsed > 0 {
-		speed = int64(float64(written) / elapsed)
-	}
-
-	log.Printf("upload: saved %s (%d bytes) as %s [%.1f MB/s]", safeName, written, finalPath, float64(speed)/1024/1024)
+	log.Printf("upload: saved %s (%d bytes) as %s [%.1f MB/s]", safeName, written, finalPath, float64(finalSpeed)/1024/1024)
 
 	writeUploadJSON(w, http.StatusOK, map[string]any{
 		"status":      "saved",
@@ -155,6 +194,14 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		"path":        finalPath,
 		"received":    written,
 	})
+}
+
+func calcSpeed(bytes int64, startTime time.Time) int64 {
+	elapsed := time.Since(startTime).Seconds()
+	if elapsed <= 0 {
+		return 0
+	}
+	return int64(float64(bytes) / elapsed)
 }
 
 func writeUploadJSON(w http.ResponseWriter, status int, value any) {

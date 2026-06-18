@@ -1,6 +1,15 @@
 let lastToken = "";
 let lastAddress = "";
 
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function formatBytes(bytes) {
   if (bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB"];
@@ -21,7 +30,8 @@ function formatSpeed(bytesPerSec) {
 
 function formatUptime(seconds) {
   if (seconds < 60) return Math.round(seconds) + "s";
-  if (seconds < 3600) return Math.floor(seconds / 60) + "m " + Math.round(seconds % 60) + "s";
+  if (seconds < 3600)
+    return Math.floor(seconds / 60) + "m " + Math.round(seconds % 60) + "s";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   return h + "h " + m + "m";
@@ -32,16 +42,32 @@ function formatTime(ts) {
   return new Date(ts * 1000).toLocaleTimeString();
 }
 
+function formatPercent(received, total) {
+  if (!total || total <= 0) return "";
+  return ((received / total) * 100).toFixed(1) + "%";
+}
+
+function formatETA(total, received, speed) {
+  if (!total || !speed || received >= total) return "";
+  const remaining = total - received;
+  const seconds = remaining / speed;
+  if (seconds < 1) return "<1s";
+  if (seconds < 60) return Math.round(seconds) + "s";
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return m + "m " + s + "s";
+}
+
 function copyText(elementId) {
   const el = document.getElementById(elementId);
   if (!el) return;
-  navigator.clipboard.writeText(el.textContent).then(() => {
+  navigator.clipboard.writeText(el.textContent).then(function () {
     showToast("Copied!");
   });
 }
 
 function showToast(msg) {
-  let toast = document.getElementById("toast");
+  var toast = document.getElementById("toast");
   if (!toast) {
     toast = document.createElement("div");
     toast.id = "toast";
@@ -50,32 +76,35 @@ function showToast(msg) {
   }
   toast.textContent = msg;
   toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 1500);
+  setTimeout(function () {
+    toast.classList.remove("show");
+  }, 1500);
 }
 
 function showSettingsStatus(msg, isError) {
-  const el = document.getElementById("settings-status");
+  var el = document.getElementById("settings-status");
   if (!el) return;
   el.textContent = msg;
   el.style.color = isError ? "#ff8a8a" : "#6fcf97";
-  setTimeout(() => { el.textContent = ""; }, 3000);
+  setTimeout(function () {
+    el.textContent = "";
+  }, 3000);
 }
 
 async function saveOutputDir() {
-  const input = document.getElementById("output-dir-input");
-  const path = input ? input.value.trim() : "";
+  var input = document.getElementById("output-dir-input");
+  var path = input ? input.value.trim() : "";
   if (!path) {
     showSettingsStatus("Enter a folder path", true);
     return;
   }
-
   try {
-    const resp = await fetch("/ui/settings/output-dir", {
+    var resp = await fetch("/ui/settings/output-dir", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path }),
+      body: JSON.stringify({ path: path }),
     });
-    const data = await resp.json();
+    var data = await resp.json();
     if (data.status === "saved") {
       showSettingsStatus("Output folder saved", false);
       input.value = "";
@@ -90,10 +119,8 @@ async function saveOutputDir() {
 
 async function resetOutputDir() {
   try {
-    const resp = await fetch("/ui/settings/output-dir/reset", {
-      method: "POST",
-    });
-    const data = await resp.json();
+    var resp = await fetch("/ui/settings/output-dir/reset", { method: "POST" });
+    var data = await resp.json();
     if (data.status === "reset") {
       showSettingsStatus("Reset to default", false);
       refresh();
@@ -104,41 +131,84 @@ async function resetOutputDir() {
 }
 
 function renderTransferItem(t) {
-  const percent = t.total > 0 ? Math.round((t.received / t.total) * 100) : 0;
-  const statusClass = t.status === "receiving" ? "status-receiving"
-    : t.status === "saved" ? "status-saved"
-    : "status-failed";
+  var statusClass =
+    t.status === "receiving"
+      ? "status-receiving"
+      : t.status === "saved"
+        ? "status-saved"
+        : "status-failed";
 
-  let meta = formatBytes(t.received);
-  if (t.total > 0) meta += " / " + formatBytes(t.total);
-  if (t.speed > 0) meta += " \u00b7 " + formatSpeed(t.speed);
+  var name = escapeHtml(t.filename);
+  var status = escapeHtml(t.status);
 
-  let extra = "";
+  if (t.status === "receiving") {
+    var pct = t.total > 0 ? ((t.received / t.total) * 100).toFixed(1) : "";
+    var percentText = pct ? pct + "%" : "";
+    var barHtml = "";
+    if (t.total > 0) {
+      var pctNum = parseFloat(pct) || 0;
+      barHtml =
+        '<div class="progress-track"><div class="progress-fill" style="width:' +
+        pctNum +
+        '%"></div></div>';
+    }
+
+    var details = formatBytes(t.received);
+    if (t.total > 0) details += " / " + formatBytes(t.total);
+    if (t.speed > 0) details += " \u00b7 " + formatSpeed(t.speed);
+    var eta = formatETA(t.total, t.received, t.speed);
+    if (eta) details += " \u00b7 ETA " + eta;
+
+    return (
+      '<div class="transfer-item">' +
+        '<div class="transfer-top">' +
+          '<span class="transfer-filename">' + name + "</span>" +
+          '<span class="transfer-status ' + statusClass + '">' + status + "</span>" +
+        "</div>" +
+        '<div class="transfer-progress-row">' +
+          barHtml +
+          (percentText
+            ? '<span class="transfer-percent">' + percentText + "</span>"
+            : "") +
+        "</div>" +
+        '<div class="transfer-details">' + escapeHtml(details) + "</div>" +
+      "</div>"
+    );
+  }
+
+  var sizeInfo = formatBytes(t.received);
+  if (t.status === "saved" && t.total > 0) sizeInfo = formatBytes(t.total);
+
+  var details = sizeInfo;
+  if (t.speed > 0) details += " \u00b7 " + formatSpeed(t.speed);
+  if (t.status === "saved" && t.completed_at) {
+    details += " \u00b7 " + formatTime(t.completed_at);
+  }
+
+  var extra = "";
   if (t.status === "saved" && t.path) {
-    extra = '<div class="transfer-meta" style="margin-top:4px;color:#6f7f9d;font-size:11px">' + t.path + "</div>";
+    extra =
+      '<div class="transfer-path">' + escapeHtml(t.path) + "</div>";
   }
   if (t.status === "failed" && t.error) {
-    extra = '<div class="transfer-meta" style="margin-top:4px;color:#ff8a8a;font-size:11px">' + t.error + "</div>";
-  }
-
-  let progressHtml = "";
-  if (t.status === "receiving" && t.total > 0) {
-    progressHtml = '<div class="progress-track"><div class="progress-fill" style="width:' + percent + '%"></div></div>';
+    extra =
+      '<div class="transfer-error">' + escapeHtml(t.error) + "</div>";
   }
 
   return (
     '<div class="transfer-item">' +
-      '<span class="transfer-filename">' + t.filename + "</span>" +
-      progressHtml +
-      '<span class="transfer-meta">' + meta + "</span>" +
-      '<span class="transfer-status ' + statusClass + '">' + t.status + "</span>" +
-    "</div>" +
-    extra
+      '<div class="transfer-top">' +
+        '<span class="transfer-filename">' + name + "</span>" +
+        '<span class="transfer-status ' + statusClass + '">' + status + "</span>" +
+      "</div>" +
+      '<div class="transfer-details">' + escapeHtml(details) + "</div>" +
+      extra +
+    "</div>"
   );
 }
 
 function render(state) {
-  const badge = document.getElementById("status-badge");
+  var badge = document.getElementById("status-badge");
   if (state.status === "ok") {
     badge.textContent = "Running";
     badge.className = "badge ok";
@@ -149,21 +219,33 @@ function render(state) {
 
   document.getElementById("address").textContent = state.address || "\u2014";
   document.getElementById("token").textContent = state.token || "\u2014";
-  document.getElementById("agent-status").textContent = state.status || "\u2014";
-  document.getElementById("uptime").textContent = formatUptime(state.uptime_seconds || 0);
-  document.getElementById("files-received").textContent = (state.received_count || 0).toString();
-  document.getElementById("active-transfers").textContent = (state.active_count || 0).toString();
-  document.getElementById("output-dir").textContent = state.output_dir || "received";
+  document.getElementById("agent-status").textContent =
+    state.status || "\u2014";
+  document.getElementById("uptime").textContent = formatUptime(
+    state.uptime_seconds || 0
+  );
+  document.getElementById("files-received").textContent = String(
+    state.received_count || 0
+  );
+  document.getElementById("active-transfers").textContent = String(
+    state.active_count || 0
+  );
+  document.getElementById("output-dir").textContent =
+    state.output_dir || "received";
 
-  const qr = document.getElementById("pairing-qr");
+  var qr = document.getElementById("pairing-qr");
   if (state.token !== lastToken || state.address !== lastAddress) {
-    qr.src = "/ui/qr?t=" + encodeURIComponent(state.token) + "&a=" + encodeURIComponent(state.address);
+    qr.src =
+      "/ui/qr?t=" +
+      encodeURIComponent(state.token) +
+      "&a=" +
+      encodeURIComponent(state.address);
     lastToken = state.token;
     lastAddress = state.address;
   }
 
-  const activeList = document.getElementById("active-list");
-  const active = (state.transfers || []).filter(function(t) {
+  var activeList = document.getElementById("active-list");
+  var active = (state.transfers || []).filter(function (t) {
     return t.status === "receiving";
   });
   if (active.length === 0) {
@@ -172,8 +254,8 @@ function render(state) {
     activeList.innerHTML = active.map(renderTransferItem).join("");
   }
 
-  const receivedList = document.getElementById("received-list");
-  const received = (state.transfers || []).filter(function(t) {
+  var receivedList = document.getElementById("received-list");
+  var received = (state.transfers || []).filter(function (t) {
     return t.status === "saved";
   });
   if (received.length === 0) {
@@ -185,13 +267,13 @@ function render(state) {
 
 async function refresh() {
   try {
-    const response = await fetch("/ui/state", { cache: "no-store" });
+    var response = await fetch("/ui/state", { cache: "no-store" });
     if (response.ok) {
-      const state = await response.json();
+      var state = await response.json();
       render(state);
     }
   } catch (e) {
-    // silently retry on next interval
+    // silently retry
   }
 }
 

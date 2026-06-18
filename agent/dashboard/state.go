@@ -77,6 +77,16 @@ func AddTransfer(id, filename string, total int64) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	for i := range state.Transfers {
+		if state.Transfers[i].ID == id {
+			if total > 0 {
+				state.Transfers[i].Total = total
+			}
+			state.Transfers[i].Filename = filename
+			return
+		}
+	}
+
 	now := time.Now().Unix()
 	state.Transfers = append(state.Transfers, Transfer{
 		ID:        id,
@@ -97,8 +107,16 @@ func UpdateTransfer(id string, received int64, speed int64) {
 	for i := range state.Transfers {
 		if state.Transfers[i].ID == id {
 			state.Transfers[i].Received = received
-			state.Transfers[i].Speed = speed
 			state.Transfers[i].UpdatedAt = now
+
+			if speed > 0 {
+				state.Transfers[i].Speed = speed
+			} else if received > 0 && state.Transfers[i].StartedAt > 0 {
+				elapsed := float64(now - state.Transfers[i].StartedAt)
+				if elapsed > 0 {
+					state.Transfers[i].Speed = int64(float64(received) / elapsed)
+				}
+			}
 			return
 		}
 	}
@@ -111,11 +129,25 @@ func CompleteTransfer(id, path string) {
 	now := time.Now().Unix()
 	for i := range state.Transfers {
 		if state.Transfers[i].ID == id {
-			state.Transfers[i].Status = "saved"
-			state.Transfers[i].Path = path
-			state.Transfers[i].Received = state.Transfers[i].Total
-			state.Transfers[i].CompletedAt = now
-			state.Transfers[i].UpdatedAt = now
+			t := &state.Transfers[i]
+			t.Status = "saved"
+			t.Path = path
+
+			if t.Received > 0 && t.Total <= 0 {
+				t.Total = t.Received
+			} else if t.Total > 0 && t.Received <= 0 {
+				t.Received = t.Total
+			}
+
+			if t.StartedAt > 0 {
+				elapsed := float64(now - t.StartedAt)
+				if elapsed > 0 && t.Received > 0 {
+					t.Speed = int64(float64(t.Received) / elapsed)
+				}
+			}
+
+			t.CompletedAt = now
+			t.UpdatedAt = now
 			state.ReceivedCount++
 			return
 		}
@@ -182,4 +214,17 @@ func GetActiveTransfers() []Transfer {
 		}
 	}
 	return active
+}
+
+func GetRecentlyCompleted() []Transfer {
+	mu.Lock()
+	defer mu.Unlock()
+
+	var completed []Transfer
+	for _, t := range state.Transfers {
+		if t.Status == "saved" && t.CompletedAt > 0 {
+			completed = append(completed, t)
+		}
+	}
+	return completed
 }

@@ -9,6 +9,8 @@ import (
 	"github.com/123100123/lanlink/agent/dashboard"
 )
 
+var previouslyActive = make(map[string]bool)
+
 func startTerminalProgress() {
 	var lastPrinted time.Time
 
@@ -22,13 +24,26 @@ func startTerminalProgress() {
 		lastPrinted = now
 
 		active := dashboard.GetActiveTransfers()
-		if len(active) == 0 {
-			continue
-		}
+		completed := dashboard.GetRecentlyCompleted()
 
+		currentActive := make(map[string]bool)
 		for _, t := range active {
+			currentActive[t.ID] = true
 			renderTerminalTransfer(t)
 		}
+
+		for id := range previouslyActive {
+			if !currentActive[id] {
+				for _, t := range completed {
+					if t.ID == id {
+						fmt.Fprintf(os.Stderr, "\nSaved: %s -> %s\n", t.Filename, t.Path)
+						break
+					}
+				}
+			}
+		}
+
+		previouslyActive = currentActive
 	}
 }
 
@@ -39,7 +54,14 @@ func renderTerminalTransfer(t dashboard.Transfer) {
 	}
 
 	if t.Total <= 0 {
-		fmt.Printf("\rReceiving: %s  %s received", name, formatBytes(t.Received))
+		speedStr := ""
+		if t.Speed > 0 {
+			speedStr = " " + formatSpeed(t.Speed)
+		}
+		fmt.Fprintf(os.Stderr,
+			"\rReceiving: %s  %s received%s        ",
+			name, formatBytes(t.Received), speedStr,
+		)
 		return
 	}
 
@@ -59,7 +81,7 @@ func renderTerminalTransfer(t dashboard.Transfer) {
 	}
 
 	fmt.Fprintf(os.Stderr,
-		"\rReceiving: %s [%s] %5.1f%%  %s / %s%s%s",
+		"\rReceiving: %s [%s] %5.1f%%  %s / %s%s%s        ",
 		name, bar, percent,
 		formatBytes(t.Received), formatBytes(t.Total),
 		speedStr, etaStr,
