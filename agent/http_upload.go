@@ -8,6 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
+
+	"github.com/123100123/lanlink/agent/dashboard"
 )
 
 func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -40,8 +43,10 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	safeName := filepath.Base(filename)
+	outputDir := dashboard.GetOutputDir()
 
-	if err := os.MkdirAll("received/tmp", 0755); err != nil {
+	tmpDir := filepath.Join(outputDir, "tmp")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		log.Println("upload: mkdir tmp failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
@@ -50,8 +55,8 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := os.MkdirAll("received", 0755); err != nil {
-		log.Println("upload: mkdir received failed:", err)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		log.Println("upload: mkdir output failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
 			"error":  "server error",
@@ -59,13 +64,13 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	finalPath := uniqueUploadPath("received", safeName)
+	finalPath := uniqueUploadPath(outputDir, safeName)
 
 	tmpName := safeName
 	if transferID != "" {
 		tmpName = transferID + "_" + safeName
 	}
-	tempPath := filepath.Join("received", "tmp", tmpName)
+	tempPath := filepath.Join(tmpDir, tmpName)
 
 	out, err := os.Create(tempPath)
 	if err != nil {
@@ -77,12 +82,20 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dashID := transferID
+	if dashID == "" {
+		dashID = safeName
+	}
+	dashboard.AddTransfer(dashID, safeName, 0)
+	startTime := time.Now()
+
 	buf := make([]byte, 256*1024)
 	written, err := io.CopyBuffer(out, r.Body, buf)
 
 	if err != nil {
 		out.Close()
 		os.Remove(tempPath)
+		dashboard.FailTransfer(dashID, "write failed")
 		log.Println("upload: write failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
@@ -94,6 +107,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	if err := out.Sync(); err != nil {
 		out.Close()
 		os.Remove(tempPath)
+		dashboard.FailTransfer(dashID, "sync failed")
 		log.Println("upload: sync failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
@@ -104,6 +118,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := out.Close(); err != nil {
 		os.Remove(tempPath)
+		dashboard.FailTransfer(dashID, "close failed")
 		log.Println("upload: close failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
@@ -114,6 +129,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := os.Rename(tempPath, finalPath); err != nil {
 		os.Remove(tempPath)
+		dashboard.FailTransfer(dashID, "rename failed")
 		log.Println("upload: rename failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
@@ -122,7 +138,15 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("upload: saved %s (%d bytes) as %s", safeName, written, finalPath)
+	dashboard.CompleteTransfer(dashID, finalPath)
+
+	elapsed := time.Since(startTime).Seconds()
+	speed := int64(0)
+	if elapsed > 0 {
+		speed = int64(float64(written) / elapsed)
+	}
+
+	log.Printf("upload: saved %s (%d bytes) as %s [%.1f MB/s]", safeName, written, finalPath, float64(speed)/1024/1024)
 
 	writeUploadJSON(w, http.StatusOK, map[string]any{
 		"status":      "saved",

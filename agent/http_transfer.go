@@ -9,11 +9,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/123100123/lanlink/agent/dashboard"
 	transferpkg "github.com/123100123/lanlink/internal/transfer"
 	"github.com/123100123/lanlink/protocol"
 )
 
-var httpTransferManager = transferpkg.NewManager()
+var httpTransferManager = transferpkg.NewManager(dashboard.GetOutputDir)
 
 func transferStartHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -115,6 +116,8 @@ func transferStartHandler(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
+
+	dashboard.AddTransfer(req.TransferID, req.Filename, req.Size)
 
 	writeTransferJSON(
 		w,
@@ -267,6 +270,7 @@ func handleHTTPTransferChunk(
 		}
 
 		httpTransferManager.Cancel(transferID)
+		dashboard.FailTransfer(transferID, "write chunk failed")
 		writeTransferJSON(
 			w,
 			http.StatusBadRequest,
@@ -280,6 +284,8 @@ func handleHTTPTransferChunk(
 		)
 		return
 	}
+
+	dashboard.UpdateTransfer(transferID, received, 0)
 
 	writeTransferJSON(
 		w,
@@ -335,6 +341,7 @@ func handleHTTPTransferFinish(
 			message = "file size mismatch"
 		}
 
+		dashboard.FailTransfer(transferID, message)
 		writeTransferJSON(
 			w,
 			status,
@@ -348,6 +355,8 @@ func handleHTTPTransferFinish(
 		)
 		return
 	}
+
+	dashboard.CompleteTransfer(transferID, active.FinalPath)
 
 	writeTransferJSON(
 		w,

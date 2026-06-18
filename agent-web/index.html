@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LANLink Agent</title>
+  <link rel="stylesheet" href="/ui/assets/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>LANLink Agent</h1>
+      <span class="badge" id="status-badge">Starting...</span>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Pair Device</h2>
+        <div class="qr-container">
+          <img id="pairing-qr" src="/ui/qr" alt="Pairing QR Code">
+        </div>
+        <div class="info-row">
+          <span class="info-label">Address</span>
+          <span class="info-value" id="address">—</span>
+          <button class="copy-btn" onclick="copyText('address')">Copy</button>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Token</span>
+          <span class="info-value" id="token">—</span>
+          <button class="copy-btn" onclick="copyText('token')">Copy</button>
+        </div>
+        <p class="hint">Scan this QR code from the LANLink mobile app to pair.</p>
+      </div>
+
+      <div class="card">
+        <h2>Agent Status</h2>
+        <div class="info-row">
+          <span class="info-label">Status</span>
+          <span class="info-value" id="agent-status">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Uptime</span>
+          <span class="info-value" id="uptime">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Files received</span>
+          <span class="info-value" id="files-received">0</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Active transfers</span>
+          <span class="info-value" id="active-transfers">0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card full-width">
+      <h2>Output Folder</h2>
+      <div class="info-row">
+        <span class="info-label">Current</span>
+        <span class="info-value" id="output-dir">—</span>
+      </div>
+      <div class="settings-form">
+        <input type="text" id="output-dir-input" class="settings-input" placeholder="/home/user/Downloads/LANLink">
+        <div class="settings-actions">
+          <button class="copy-btn" onclick="saveOutputDir()">Save</button>
+          <button class="copy-btn" onclick="resetOutputDir()">Reset to default</button>
+        </div>
+        <span class="settings-status" id="settings-status"></span>
+      </div>
+    </div>
+
+    <div class="card full-width">
+      <h2>Active Transfers</h2>
+      <div id="active-list" class="transfer-list">
+        <p class="empty">No active transfers</p>
+      </div>
+    </div>
+
+    <div class="card full-width">
+      <h2>Received This Run</h2>
+      <div id="received-list" class="transfer-list">
+        <p class="empty">No files received yet</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/ui/assets/app.js" defer></script>
+</body>
+</html>

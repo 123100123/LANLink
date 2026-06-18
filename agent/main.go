@@ -2,8 +2,11 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/http"
+	"time"
 
+	"github.com/123100123/lanlink/agent/dashboard"
 	ws "github.com/123100123/lanlink/agent/ws"
 	"github.com/123100123/lanlink/internal/config"
 	"github.com/123100123/lanlink/internal/network"
@@ -37,6 +40,17 @@ func main() {
 		log.Fatal("failed to generate pairing token:", err)
 	}
 
+	token := pairingManager.Token()
+	address := selectedPairingAddress(cfg.Port)
+
+	dashboard.InitSettings("received")
+	dashboard.SetAddress(address)
+	dashboard.SetToken(token)
+
+	go startTerminalProgress()
+
+	dashboard.RegisterRoutes()
+
 	http.HandleFunc("/health", corsMiddleware(healthHandler))
 	http.HandleFunc("/pair", corsMiddleware(pairHandler))
 	http.HandleFunc("/devices", corsMiddleware(devicesHandler))
@@ -48,9 +62,7 @@ func main() {
 	http.HandleFunc("/transfers/resumable/", corsMiddleware(resumableSubresourceHandler))
 	http.HandleFunc("/transfers/", corsMiddleware(transferSubresourceHandler))
 
-	address := ":" + cfg.Port
-
-	log.Println("LANLink agent listening on", address)
+	listenAddr := ":" + cfg.Port
 
 	ips, err := network.GetLocalIPs()
 	if err == nil {
@@ -62,14 +74,32 @@ func main() {
 		log.Println("")
 	}
 
-	log.Println("Pairing token:", pairingManager.Token())
+	log.Println("Pairing token:", token)
 	log.Println("Use this token to pair a new device.")
 	log.Println("A new token will be generated after each successful pairing.")
 	log.Println("")
 
-	printPairingQR(pairingManager.Token(), cfg.Port)
+	printPairingQR(token, cfg.Port)
 
-	err = http.ListenAndServe(address, nil)
+	log.Println("")
+	log.Println("Dashboard: http://127.0.0.1:" + cfg.Port + "/ui")
+	log.Println("")
+
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("LANLink agent listening on", listenAddr)
+
+	if dashboard.ShouldOpenDashboard() {
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			dashboard.OpenDashboard(cfg.Port)
+		}()
+	}
+
+	err = http.Serve(listener, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
