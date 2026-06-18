@@ -128,6 +128,8 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	dashboard.AddPairedClient(device.DeviceID, device.DeviceName)
+
 	if err := pairingManager.Rotate(); err != nil {
 		log.Println("failed to rotate pairing token:", err)
 		return

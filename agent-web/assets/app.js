@@ -42,11 +42,6 @@ function formatTime(ts) {
   return new Date(ts * 1000).toLocaleTimeString();
 }
 
-function formatPercent(received, total) {
-  if (!total || total <= 0) return "";
-  return ((received / total) * 100).toFixed(1) + "%";
-}
-
 function formatETA(total, received, speed) {
   if (!total || !speed || received >= total) return "";
   const remaining = total - received;
@@ -59,7 +54,7 @@ function formatETA(total, received, speed) {
 }
 
 function copyText(elementId) {
-  const el = document.getElementById(elementId);
+  var el = document.getElementById(elementId);
   if (!el) return;
   navigator.clipboard.writeText(el.textContent).then(function () {
     showToast("Copied!");
@@ -130,13 +125,77 @@ async function resetOutputDir() {
   }
 }
 
+async function unpairClient(deviceId) {
+  if (!confirm("Unpair this client? The device will need to pair again.")) return;
+  try {
+    var resp = await fetch("/ui/clients/unpair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device_id: deviceId }),
+    });
+    var data = await resp.json();
+    if (data.status === "ok") {
+      showToast("Client unpaired");
+      refresh();
+    } else {
+      showToast(data.error || "Failed to unpair");
+    }
+  } catch (e) {
+    showToast("Request failed");
+  }
+}
+
+async function cancelTransfer(transferId) {
+  if (!confirm("Cancel this transfer?")) return;
+  try {
+    var resp = await fetch("/ui/transfers/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transfer_id: transferId }),
+    });
+    var data = await resp.json();
+    if (data.status === "ok") {
+      showToast("Transfer cancelled");
+      refresh();
+    } else {
+      showToast(data.error || "Failed to cancel");
+    }
+  } catch (e) {
+    showToast("Request failed");
+  }
+}
+
+function renderPairedClients(clients) {
+  var el = document.getElementById("paired-clients-list");
+  if (!el) return;
+  if (!clients || clients.length === 0) {
+    el.innerHTML = '<p class="empty">No clients paired this run</p>';
+    return;
+  }
+
+  var html = "";
+  for (var i = 0; i < clients.length; i++) {
+    var c = clients[i];
+    html +=
+      '<div class="client-row">' +
+        '<span class="client-name">' + escapeHtml(c.device_name) + "</span>" +
+        '<span class="client-id">' + escapeHtml(c.device_id) + "</span>" +
+        '<span class="client-time">' + formatTime(c.paired_at) + "</span>" +
+        '<button class="icon-btn danger" title="Unpair client" onclick="unpairClient(\'' + escapeHtml(c.device_id).replace(/'/g, "\\'") + "')\">&times;</button>" +
+      "</div>";
+  }
+  el.innerHTML = html;
+}
+
 function renderTransferItem(t) {
   var statusClass =
     t.status === "receiving"
       ? "status-receiving"
       : t.status === "saved"
         ? "status-saved"
-        : "status-failed";
+        : t.status === "cancelled"
+          ? "status-cancelled"
+          : "status-failed";
 
   var name = escapeHtml(t.filename);
   var status = escapeHtml(t.status);
@@ -159,10 +218,16 @@ function renderTransferItem(t) {
     var eta = formatETA(t.total, t.received, t.speed);
     if (eta) details += " \u00b7 ETA " + eta;
 
+    var cancelBtn = "";
+    if (t.cancellable) {
+      cancelBtn = '<button class="icon-btn danger" title="Cancel transfer" onclick="cancelTransfer(\'' + escapeHtml(t.id).replace(/'/g, "\\'") + "')\">&times;</button>";
+    }
+
     return (
       '<div class="transfer-item">' +
         '<div class="transfer-top">' +
           '<span class="transfer-filename">' + name + "</span>" +
+          cancelBtn +
           '<span class="transfer-status ' + statusClass + '">' + status + "</span>" +
         "</div>" +
         '<div class="transfer-progress-row">' +
@@ -187,12 +252,13 @@ function renderTransferItem(t) {
 
   var extra = "";
   if (t.status === "saved" && t.path) {
-    extra =
-      '<div class="transfer-path">' + escapeHtml(t.path) + "</div>";
+    extra = '<div class="transfer-path">' + escapeHtml(t.path) + "</div>";
   }
   if (t.status === "failed" && t.error) {
-    extra =
-      '<div class="transfer-error">' + escapeHtml(t.error) + "</div>";
+    extra = '<div class="transfer-error">' + escapeHtml(t.error) + "</div>";
+  }
+  if (t.status === "cancelled") {
+    extra = '<div class="transfer-error">Cancelled by user</div>';
   }
 
   return (
@@ -244,6 +310,8 @@ function render(state) {
     lastAddress = state.address;
   }
 
+  renderPairedClients(state.paired_clients);
+
   var activeList = document.getElementById("active-list");
   var active = (state.transfers || []).filter(function (t) {
     return t.status === "receiving";
@@ -256,7 +324,7 @@ function render(state) {
 
   var receivedList = document.getElementById("received-list");
   var received = (state.transfers || []).filter(function (t) {
-    return t.status === "saved";
+    return t.status === "saved" || t.status === "cancelled";
   });
   if (received.length === 0) {
     receivedList.innerHTML = '<p class="empty">No files received yet</p>';

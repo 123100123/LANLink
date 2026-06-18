@@ -53,6 +53,16 @@ func (s *DeviceStore) AddDevice(device Device) {
 	s.Devices = append(s.Devices, device)
 }
 
+func (s *DeviceStore) RemoveDevice(deviceID string) bool {
+	for i, d := range s.Devices {
+		if d.DeviceID == deviceID {
+			s.Devices = append(s.Devices[:i], s.Devices[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
 func (s *DeviceStore) PublicDevices() []protocol.DeviceInfo {
 	devices := make([]protocol.DeviceInfo, 0, len(s.Devices))
 

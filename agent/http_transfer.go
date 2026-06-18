@@ -236,6 +236,20 @@ func handleHTTPTransferChunk(
 
 	defer r.Body.Close()
 
+	if dashboard.IsTransferCancelled(transferID) {
+		httpTransferManager.Cancel(transferID)
+		writeTransferJSON(
+			w,
+			http.StatusConflict,
+			protocol.TransferChunkResponse{
+				Status:     "error",
+				TransferID: transferID,
+				Error:      "transfer cancelled",
+			},
+		)
+		return
+	}
+
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
 		httpTransferManager.Cancel(transferID)

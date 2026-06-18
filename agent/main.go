@@ -30,6 +30,11 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func cancelTransferByDashboardID(id string) error {
+	httpTransferManager.Cancel(id)
+	return nil
+}
+
 func main() {
 	cfg := config.Load()
 
@@ -46,6 +51,7 @@ func main() {
 	dashboard.InitSettings("received")
 	dashboard.SetAddress(address)
 	dashboard.SetToken(token)
+	dashboard.SetTransferCancelFunc(cancelTransferByDashboardID)
 
 	go startTerminalProgress()
 

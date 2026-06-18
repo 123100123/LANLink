@@ -32,7 +32,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filename := r.Header.Get("X-Filename")
-	transferID := r.Header.Get("X-Transfer-Id")
+	preferredID := r.Header.Get("X-Transfer-Id")
 
 	if filename == "" {
 		writeUploadJSON(w, http.StatusBadRequest, map[string]any{
@@ -66,10 +66,9 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	finalPath := uniqueUploadPath(outputDir, safeName)
 
-	tmpName := safeName
-	if transferID != "" {
-		tmpName = transferID + "_" + safeName
-	}
+	dashID := dashboard.ReserveTransferID(preferredID, safeName)
+
+	tmpName := dashID + "_" + safeName
 	tempPath := filepath.Join(tmpDir, tmpName)
 
 	out, err := os.Create(tempPath)
@@ -80,11 +79,6 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 			"error":  "server error",
 		})
 		return
-	}
-
-	dashID := transferID
-	if dashID == "" {
-		dashID = safeName
 	}
 
 	var totalSize int64
@@ -104,6 +98,18 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	lastDashUpdate := startTime
 
 	for {
+		if dashboard.IsTransferCancelled(dashID) {
+			out.Close()
+			os.Remove(tempPath)
+			log.Printf("upload: cancelled %s (%d bytes received)", safeName, written)
+			writeUploadJSON(w, http.StatusConflict, map[string]any{
+				"status":      "cancelled",
+				"transfer_id": dashID,
+				"error":       "transfer cancelled",
+			})
+			return
+		}
+
 		n, readErr := r.Body.Read(buf)
 
 		if n > 0 {
@@ -189,7 +195,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	writeUploadJSON(w, http.StatusOK, map[string]any{
 		"status":      "saved",
-		"transfer_id": transferID,
+		"transfer_id": dashID,
 		"filename":    safeName,
 		"path":        finalPath,
 		"received":    written,

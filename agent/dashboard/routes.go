@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	agentweb "github.com/123100123/lanlink/agent-web"
+	"github.com/123100123/lanlink/internal/paths"
+	"github.com/123100123/lanlink/internal/store"
 )
 
 func RegisterRoutes() {
@@ -61,6 +63,12 @@ func subHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "reset", "output_dir": GetOutputDir()})
 
+	case path == "clients/unpair" && r.Method == http.MethodPost:
+		handleUnpairClient(w, r)
+
+	case path == "transfers/cancel" && r.Method == http.MethodPost:
+		handleCancelTransfer(w, r)
+
 	case strings.HasPrefix(path, "assets/"):
 		assetPath := path
 		data, err := fs.ReadFile(agentweb.Files, assetPath)
@@ -105,6 +113,65 @@ func handleSetOutputDir(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "saved", "output_dir": GetOutputDir()})
+}
+
+func handleUnpairClient(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DeviceID string `json:"device_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DeviceID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": "missing device_id"})
+		return
+	}
+
+	deviceStore, err := store.Load(paths.DeviceStorePath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": "failed to load device store"})
+		return
+	}
+
+	found := deviceStore.RemoveDevice(req.DeviceID)
+	if !found {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": "device not found"})
+		return
+	}
+
+	if err := deviceStore.Save(paths.DeviceStorePath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": "failed to save device store"})
+		return
+	}
+
+	RemovePairedClient(req.DeviceID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func handleCancelTransfer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TransferID string `json:"transfer_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TransferID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": "missing transfer_id"})
+		return
+	}
+
+	CancelTransfer(req.TransferID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "transfer_id": req.TransferID})
 }
 
 func IsLocalRequest(r *http.Request) bool {
