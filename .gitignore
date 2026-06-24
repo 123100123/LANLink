@@ -23,6 +23,7 @@ data/
 bin/
 build/
 dist/
+release/
 
 *.exe
 *.exe~
