@@ -66,21 +66,12 @@ body {
 }
 
 .brand-mark {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent), #7a5cff);
   box-shadow: 0 6px 18px rgba(79, 124, 255, 0.4);
-  position: relative;
   flex-shrink: 0;
-}
-
-.brand-mark::after {
-  content: "";
-  position: absolute;
-  inset: 9px;
-  border-radius: 4px;
-  border: 2px solid rgba(255, 255, 255, 0.92);
+  display: block;
 }
 
 .brand-text { display: flex; flex-direction: column; }
