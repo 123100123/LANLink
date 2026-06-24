@@ -50,7 +50,9 @@ export default function DeviceScreen() {
   async function handleSendFile() {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        copyToCacheDirectory: false,
+        // file:// URIs (not content://) — the native uploader can't read
+        // content:// URIs, which left uploads stuck at 0%.
+        copyToCacheDirectory: true,
         multiple: true,
       });
 
