@@ -63,6 +63,12 @@ func subHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "reset", "output_dir": GetOutputDir()})
 
+	case path == "fs/list":
+		handleFsList(w, r)
+
+	case path == "fs/mkdir" && r.Method == http.MethodPost:
+		handleFsMkdir(w, r)
+
 	case path == "clients/unpair" && r.Method == http.MethodPost:
 		handleUnpairClient(w, r)
 

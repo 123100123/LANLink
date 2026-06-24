@@ -1,6 +1,10 @@
 let lastToken = "";
 let lastAddress = "";
 
+let browserPath = "";
+let browserParent = "";
+let browserSelected = "";
+
 function escapeHtml(value) {
   return String(value == null ? "" : value)
     .replace(/&/g, "&amp;")
@@ -71,16 +75,17 @@ function showToast(msg) {
   }
   toast.textContent = msg;
   toast.classList.add("show");
-  setTimeout(function () {
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(function () {
     toast.classList.remove("show");
-  }, 1500);
+  }, 1800);
 }
 
 function showSettingsStatus(msg, isError) {
   var el = document.getElementById("settings-status");
   if (!el) return;
   el.textContent = msg;
-  el.style.color = isError ? "#ff8a8a" : "#6fcf97";
+  el.style.color = isError ? "#ff7b7b" : "#5ed39b";
   setTimeout(function () {
     el.textContent = "";
   }, 3000);
@@ -165,6 +170,121 @@ async function cancelTransfer(transferId) {
   }
 }
 
+/* ---------- Folder browser ---------- */
+
+function openBrowser() {
+  document.getElementById("browser-overlay").classList.add("show");
+  var start = document.getElementById("output-dir-input").value.trim();
+  browserLoad(start);
+}
+
+function closeBrowser() {
+  document.getElementById("browser-overlay").classList.remove("show");
+}
+
+function onBrowserOverlayClick(e) {
+  if (e.target === document.getElementById("browser-overlay")) closeBrowser();
+}
+
+async function browserLoad(path) {
+  var list = document.getElementById("browser-list");
+  var url = "/ui/fs/list";
+  if (path) url += "?path=" + encodeURIComponent(path);
+  try {
+    var resp = await fetch(url, { cache: "no-store" });
+    var data = await resp.json();
+    if (!resp.ok || data.status === "error") {
+      list.innerHTML =
+        '<p class="empty">' + escapeHtml(data.error || "Cannot open folder") + "</p>";
+      return;
+    }
+    renderBrowser(data);
+  } catch (e) {
+    list.innerHTML = '<p class="empty">Request failed</p>';
+  }
+}
+
+function renderBrowser(data) {
+  browserPath = data.path || "";
+  browserParent = data.parent || "";
+  browserSelected = data.path || "";
+
+  var pathEl = document.getElementById("browser-path");
+  pathEl.textContent = data.path || "—";
+  pathEl.title = data.path || "";
+  document.getElementById("browser-selected").textContent = data.path
+    ? "Selected: " + data.path
+    : "";
+
+  document.getElementById("browser-up").disabled = !browserParent;
+
+  var quick = document.getElementById("browser-quick");
+  quick.innerHTML = (data.quick || [])
+    .map(function (q) {
+      return (
+        '<button class="quick-chip" data-path="' +
+        escapeHtml(q.path) +
+        '">' +
+        escapeHtml(q.name) +
+        "</button>"
+      );
+    })
+    .join("");
+
+  var list = document.getElementById("browser-list");
+  if (!data.entries || data.entries.length === 0) {
+    list.innerHTML = '<p class="empty">No subfolders here</p>';
+    return;
+  }
+  list.innerHTML = data.entries
+    .map(function (e) {
+      return (
+        '<div class="browser-row" data-path="' +
+        escapeHtml(e.path) +
+        '"><span class="folder-icon">📁</span><span>' +
+        escapeHtml(e.name) +
+        "</span></div>"
+      );
+    })
+    .join("");
+}
+
+function browserUp() {
+  if (browserParent) browserLoad(browserParent);
+}
+
+async function createFolder() {
+  var input = document.getElementById("browser-newfolder-input");
+  var name = input.value.trim();
+  if (!name) return;
+  try {
+    var resp = await fetch("/ui/fs/mkdir", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: browserPath, name: name }),
+    });
+    var data = await resp.json();
+    if (resp.ok && data.status === "ok") {
+      input.value = "";
+      browserLoad(data.path);
+    } else {
+      showToast(data.error || "Could not create folder");
+    }
+  } catch (e) {
+    showToast("Request failed");
+  }
+}
+
+function useThisFolder() {
+  var chosen = browserSelected || browserPath;
+  if (!chosen) return;
+  document.getElementById("output-dir-input").value = chosen;
+  closeBrowser();
+  showToast("Folder selected — click Save to apply");
+}
+
+/* ---------- Render dashboard ---------- */
+
 function renderPairedClients(clients) {
   var el = document.getElementById("paired-clients-list");
   if (!el) return;
@@ -178,10 +298,12 @@ function renderPairedClients(clients) {
     var c = clients[i];
     html +=
       '<div class="client-row">' +
-        '<span class="client-name">' + escapeHtml(c.device_name) + "</span>" +
-        '<span class="client-id">' + escapeHtml(c.device_id) + "</span>" +
-        '<span class="client-time">' + formatTime(c.paired_at) + "</span>" +
-        '<button class="icon-btn danger" title="Unpair client" onclick="unpairClient(\'' + escapeHtml(c.device_id).replace(/'/g, "\\'") + "')\">&times;</button>" +
+      '<span class="client-name">' + escapeHtml(c.device_name) + "</span>" +
+      '<span class="client-id">' + escapeHtml(c.device_id) + "</span>" +
+      '<span class="client-time">' + formatTime(c.paired_at) + "</span>" +
+      '<button class="icon-btn danger" title="Unpair client" onclick="unpairClient(\'' +
+      escapeHtml(c.device_id).replace(/'/g, "\\'") +
+      "')\">&times;</button>" +
       "</div>";
   }
   el.innerHTML = html;
@@ -214,13 +336,16 @@ function renderTransferItem(t) {
 
     var details = formatBytes(t.received);
     if (t.total > 0) details += " / " + formatBytes(t.total);
-    if (t.speed > 0) details += " \u00b7 " + formatSpeed(t.speed);
+    if (t.speed > 0) details += " · " + formatSpeed(t.speed);
     var eta = formatETA(t.total, t.received, t.speed);
-    if (eta) details += " \u00b7 ETA " + eta;
+    if (eta) details += " · ETA " + eta;
 
     var cancelBtn = "";
     if (t.cancellable) {
-      cancelBtn = '<button class="icon-btn danger" title="Cancel transfer" onclick="cancelTransfer(\'' + escapeHtml(t.id).replace(/'/g, "\\'") + "')\">&times;</button>";
+      cancelBtn =
+        '<button class="icon-btn danger" title="Cancel transfer" onclick="cancelTransfer(\'' +
+        escapeHtml(t.id).replace(/'/g, "\\'") +
+        "')\">&times;</button>";
     }
 
     return (
@@ -245,9 +370,9 @@ function renderTransferItem(t) {
   if (t.status === "saved" && t.total > 0) sizeInfo = formatBytes(t.total);
 
   var details = sizeInfo;
-  if (t.speed > 0) details += " \u00b7 " + formatSpeed(t.speed);
+  if (t.speed > 0) details += " · " + formatSpeed(t.speed);
   if (t.status === "saved" && t.completed_at) {
-    details += " \u00b7 " + formatTime(t.completed_at);
+    details += " · " + formatTime(t.completed_at);
   }
 
   var extra = "";
@@ -275,18 +400,18 @@ function renderTransferItem(t) {
 
 function render(state) {
   var badge = document.getElementById("status-badge");
+  var badgeText = document.getElementById("status-badge-text");
   if (state.status === "ok") {
-    badge.textContent = "Running";
+    badgeText.textContent = "Running";
     badge.className = "badge ok";
   } else {
-    badge.textContent = state.status || "Unknown";
+    badgeText.textContent = state.status || "Unknown";
     badge.className = "badge error";
   }
 
-  document.getElementById("address").textContent = state.address || "\u2014";
-  document.getElementById("token").textContent = state.token || "\u2014";
-  document.getElementById("agent-status").textContent =
-    state.status || "\u2014";
+  document.getElementById("address").textContent = state.address || "—";
+  document.getElementById("token").textContent = state.token || "—";
+  document.getElementById("agent-status").textContent = state.status || "—";
   document.getElementById("uptime").textContent = formatUptime(
     state.uptime_seconds || 0
   );
@@ -324,7 +449,7 @@ function render(state) {
 
   var receivedList = document.getElementById("received-list");
   var received = (state.transfers || []).filter(function (t) {
-    return t.status === "saved" || t.status === "cancelled";
+    return t.status === "saved" || t.status === "cancelled" || t.status === "failed";
   });
   if (received.length === 0) {
     receivedList.innerHTML = '<p class="empty">No files received yet</p>';
@@ -344,6 +469,23 @@ async function refresh() {
     // silently retry
   }
 }
+
+/* ---------- Init ---------- */
+
+document.getElementById("browser-quick").addEventListener("click", function (e) {
+  var chip = e.target.closest(".quick-chip");
+  if (chip && chip.dataset.path) browserLoad(chip.dataset.path);
+});
+document.getElementById("browser-list").addEventListener("click", function (e) {
+  var row = e.target.closest(".browser-row");
+  if (row && row.dataset.path) browserLoad(row.dataset.path);
+});
+document.getElementById("browser-newfolder-input").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") createFolder();
+});
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") closeBrowser();
+});
 
 setInterval(refresh, 1000);
 refresh();
