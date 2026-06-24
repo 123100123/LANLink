@@ -62,7 +62,26 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
 
 Swap `./cmd/lanlink` for `./agent` to build the dashboard variant.
 
+### App icon (Windows)
+
+The Windows `.exe`s embed the LANLink icon via committed `.syso` resource files
+(`cmd/lanlink/icon_windows_amd64.syso`, `agent/icon_windows_*.syso`). Linux ELF
+binaries cannot carry an icon. To regenerate the resources after changing the
+icon (`assets/icon.ico`):
+
+```bash
+go install github.com/akavel/rsrc@latest
+for d in cmd/lanlink agent; do for a in amd64 arm64; do
+  "$(go env GOPATH)/bin/rsrc" -ico assets/icon.ico -arch $a -o "$d/icon_windows_$a.syso"
+done; done
+```
+
 ## Android app (APK)
+
+The mobile app is a managed Expo app. It stays Expo-Go / managed-workflow safe
+(no custom native modules), so an APK can be produced with EAS Build or a local
+Gradle build. The app icon, splash, package id (`com.lanlink.app`) and version
+are already configured in `mobile/app.json`.
 
 The mobile app is a managed Expo app. It stays Expo-Go / managed-workflow safe
 (no custom native modules), so an APK can be produced with EAS Build.
@@ -83,14 +102,23 @@ download URL for the `.apk`.
 The `production` profile produces an **AAB** (app bundle) for Play Store
 submission instead.
 
-### Local APK build (optional)
-
-If you have Android Studio / the Android SDK installed locally:
+### Local APK build (Android SDK + Java 17)
 
 ```bash
 cd mobile
-eas build --profile preview --platform android --local
+npx expo prebuild -p android --no-install      # generates android/
+cd android
+./gradlew assembleDebug                          # → app/build/outputs/apk/debug/app-debug.apk
 ```
+
+Copy the result to `release/lanlink-<version>-debug.apk`. The debug APK is signed
+with the auto-generated debug keystore and is sideloadable (`adb install`).
+
+> **Note:** the local Gradle build must reach Google's Maven repo
+> (`dl.google.com/dl/android/maven2`) to fetch the Android Gradle Plugin. Behind
+> some VPNs/proxies that host returns errors — disable the VPN or use the EAS
+> cloud build above if `./gradlew` fails with "Could not find
+> com.android.tools.build:gradle".
 
 ### App configuration
 
@@ -101,8 +129,8 @@ Relevant fields in `mobile/app.json`:
 - `android.versionCode` — integer, bump for each store submission
 - `ios.bundleIdentifier` — `com.lanlink.app`
 
-Icons/splash currently use Expo defaults; drop custom assets into `mobile/assets`
-and reference them in `app.json` before a store release.
+The app icon, adaptive icon, splash, and favicon are the LANLink WiFi mark in
+`mobile/assets/` (generated from `assets/`); `app.json` already references them.
 
 ## Local release test checklist
 
