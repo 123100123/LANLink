@@ -21,7 +21,13 @@ func main() {
 	switch os.Args[1] {
 	case "receive", "agent":
 		// Headless receiver: no dashboard, no agent-web.
-		must(agentserver.Run(agentserver.Options{}))
+		must(agentserver.Run(agentserver.Options{
+			DisableDiscovery: hasFlag("--no-discovery"),
+		}))
+
+	case "scan":
+		// Discover receivers and auto-connect (optional name/addr target).
+		must(client.Scan(positional(2), defaultDeviceName()))
 
 	case "send":
 		need(4, "send <host:port> <file>")
@@ -64,6 +70,23 @@ func need(n int, form string) {
 	}
 }
 
+// positional returns os.Args[i] if present and not a flag, else "".
+func positional(i int) string {
+	if len(os.Args) > i && len(os.Args[i]) > 0 && os.Args[i][0] != '-' {
+		return os.Args[i]
+	}
+	return ""
+}
+
+func hasFlag(name string) bool {
+	for _, a := range os.Args[2:] {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
 func must(err error) {
 	if err != nil {
 		log.Fatal(err)
@@ -83,9 +106,10 @@ func usage() {
 	fmt.Println("Usage: lanlink <command> [args]")
 	fmt.Println()
 	fmt.Println("Receiver:")
-	fmt.Println("  receive                      run a receiver (terminal QR + progress)")
+	fmt.Println("  receive [--no-discovery]     run a receiver (terminal QR + progress)")
 	fmt.Println()
 	fmt.Println("Client:")
+	fmt.Println("  scan [name|host:port]        find receivers and auto-connect (no token)")
 	fmt.Println("  pair <host:port> <token>     pair with a receiver")
 	fmt.Println("  send <host:port> <file>      send a file to a receiver")
 	fmt.Println("  health <host:port>           check a receiver is reachable")
@@ -95,6 +119,6 @@ func usage() {
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  lanlink receive")
-	fmt.Println("  lanlink pair 192.168.1.5:8787 A1B2C3")
+	fmt.Println("  lanlink scan")
 	fmt.Println("  lanlink send 192.168.1.5:8787 movie.mkv")
 }
