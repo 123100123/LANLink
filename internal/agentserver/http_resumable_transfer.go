@@ -49,15 +49,18 @@ func (m *resumableManager) Start(transferID, filename string, size int64) (*resu
 
 	safeName := filepath.Base(filename)
 
-	if err := os.MkdirAll("received/tmp", 0755); err != nil {
+	outputDir := GetOutputDir()
+	tmpDir := filepath.Join(outputDir, "tmp")
+
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll("received", 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, err
 	}
 
-	tempPath := filepath.Join("received/tmp", "resumable_"+transferID+"_"+safeName)
-	finalPath := uniqueResumablePath("received", safeName)
+	tempPath := filepath.Join(tmpDir, "resumable_"+transferID+"_"+safeName)
+	finalPath := uniqueResumablePath(outputDir, safeName)
 
 	file, err := os.OpenFile(tempPath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 	if err != nil {
