@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net"
-	"strings"
 
 	"github.com/123100123/lanlink/internal/network"
 	qr "github.com/mdp/qrterminal/v3"
@@ -114,13 +113,4 @@ func printPairingQR(token string, port string) {
 		WhiteChar: "\033[47m  \033[0m",
 		QuietZone: 2,
 	})
-}
-
-func isIgnoredPairingInterface(name string) bool {
-	name = strings.ToLower(name)
-
-	return strings.HasPrefix(name, "docker") ||
-		strings.HasPrefix(name, "br-") ||
-		strings.HasPrefix(name, "veth") ||
-		strings.HasPrefix(name, "virbr")
 }
