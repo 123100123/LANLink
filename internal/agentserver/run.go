@@ -1,17 +1,23 @@
 package agentserver
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
+	"os"
 
 	ws "github.com/123100123/lanlink/agent/ws"
 	"github.com/123100123/lanlink/internal/config"
+	"github.com/123100123/lanlink/internal/discovery"
 	"github.com/123100123/lanlink/internal/network"
 	"github.com/123100123/lanlink/internal/pairing"
 )
 
 const pairingTokenLength = 6
+
+// Version is reported in discovery beacons.
+const Version = "0.5.0-dev"
 
 // Options lets a caller layer optional behaviour on top of the pure-Go receiver
 // core without the core depending on any UI package (e.g. the dashboard binary
@@ -23,6 +29,10 @@ type Options struct {
 	RegisterRoutes func()
 	// OnListening, if set, is called once the server is listening, with the port.
 	OnListening func(port string)
+	// DisableDiscovery turns off the LAN discovery beacon (and thus open
+	// auto-connect advertising). The receiver still works; it just isn't
+	// announced for `lanlink scan`.
+	DisableDiscovery bool
 }
 
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -64,12 +74,29 @@ func Run(opts Options) error {
 
 	go startTerminalProgress()
 
+	if !opts.DisableDiscovery {
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "lanlink-receiver"
+		}
+		if err := discovery.Announce(context.Background(), discovery.Announcement{
+			Name:    hostname,
+			Addr:    address,
+			Port:    cfg.Port,
+			Version: Version,
+			Open:    true,
+		}, cfg.DiscoveryPort); err != nil {
+			log.Println("discovery: failed to start beacon:", err)
+		}
+	}
+
 	if opts.RegisterRoutes != nil {
 		opts.RegisterRoutes()
 	}
 
 	http.HandleFunc("/health", corsMiddleware(healthHandler))
 	http.HandleFunc("/pair", corsMiddleware(pairHandler))
+	http.HandleFunc("/pair/auto", corsMiddleware(pairAutoHandler))
 	http.HandleFunc("/devices", corsMiddleware(devicesHandler))
 	http.HandleFunc("/ws", corsMiddleware(ws.Handler))
 
