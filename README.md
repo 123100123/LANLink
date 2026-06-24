@@ -22,7 +22,7 @@ dashboard and the mobile app are optional UI layers on top of it.
 ## Features
 
 - Device pairing with rotating tokens, or **tokenless auto-connect** on trusted LANs
-- **LAN discovery**: receivers broadcast a UDP beacon; `lanlink scan` (desktop) and a
+- **LAN discovery**: receivers advertise via mDNS (`_lanlink._tcp`); `lanlink scan` (desktop) and a
   network-scan screen (mobile) find them and connect with no token
 - Parallel chunked uploads (CLI), native streaming uploads (mobile), resumable uploads
 - A polished **web dashboard**: live transfers, paired clients, output-folder browser, network scan
@@ -79,7 +79,7 @@ See [`docs/release.md`](docs/release.md) for Windows executables and the Android
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LANLINK_PORT` | HTTP/WS port | `8787` |
-| `LANLINK_DISCOVERY_PORT` | UDP discovery beacon port | `8788` |
+| `LANLINK_HOST` | Force the advertised LAN address (else auto-detected) | _(auto)_ |
 | `LANLINK_RECEIVED_DIR` | Output folder for received files | `received` |
 | `TRANSFER_CHUNK_SIZE` | Upload chunk size (bytes) | `65536` |
 | `TRANSFER_MAX_IN_FLIGHT_CHUNKS` | Parallel chunk uploads | `16` |
@@ -89,7 +89,7 @@ See [`docs/release.md`](docs/release.md) for Windows executables and the Android
 `lanlink scan` / mobile "Scan network" use an **open, tokenless** endpoint
 (`POST /pair/auto`) so any device on the local network can connect without a
 token. This is a deliberate convenience for **trusted LANs**. To require tokens,
-run the receiver with `lanlink receive --no-discovery` (disables beacon
+run the receiver with `lanlink receive --no-discovery` (disables mDNS
 advertising) and pair via QR/token only. Dashboard filesystem and scan routes
 (`/ui/fs/*`, `/ui/discovery/scan`) are **loopback-only** and never exposed to the LAN.
 

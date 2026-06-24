@@ -51,8 +51,7 @@ internal/
                         terminal QR + progress, the discovery beacon, and Run(Options).
   client/               Shared client operations used by cmd/lanlink and cli: health, pair,
                         devices, ping, message, send (commands.go), ws (ws.go), scan + pairAuto (scan.go).
-  discovery/            UDP beacon Announce + Scan; broadcast_unix.go / broadcast_windows.go set
-                        SO_BROADCAST (build-tagged, stdlib syscall only).
+  discovery/            mDNS Announce + Scan over _lanlink._tcp (pure-Go grandcat/zeroconf).
   transfer/             manager.go = receiver-side chunk writer (used by the core);
                         sender.go = reusable parallel chunked uploader + TerminalProgress().
   auth/ clientconfig/ config/ network/ pairing/ paths/ store/ wsutil/   small shared helpers.

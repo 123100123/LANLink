@@ -38,10 +38,10 @@ go run ./cmd/lanlink health <host:port>
 ```
 
 Useful environment variables (or a `.env`, see `.env.example`):
-`LANLINK_PORT`, `LANLINK_DISCOVERY_PORT`, `LANLINK_RECEIVED_DIR`,
+`LANLINK_PORT`, `LANLINK_HOST`, `LANLINK_RECEIVED_DIR`,
 `TRANSFER_CHUNK_SIZE`, `TRANSFER_MAX_IN_FLIGHT_CHUNKS`.
 
-To disable the discovery beacon / tokenless advertising:
+To disable mDNS advertising / tokenless discovery:
 `go run ./cmd/lanlink receive --no-discovery`.
 
 ## Verifying the Go code

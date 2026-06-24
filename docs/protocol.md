@@ -5,7 +5,8 @@ The wire formats spoken between clients and a receiver. Go DTOs live in
 `mobile/src/lib/protocol/payloads.ts`.
 
 Two planes: **HTTP** for data + simple control, **WebSocket** for the
-authenticated session. Default ports: HTTP/WS `8787`, UDP discovery `8788`.
+authenticated session. Default port: HTTP/WS `8787`; discovery is mDNS
+(`_lanlink._tcp`).
 
 ## Authentication
 
@@ -114,18 +115,20 @@ Flow:
 4. **direct_message** — `{type:"direct_message", payload:{text}}` →
    `direct_message.response` (`{status}`).
 
-## Discovery beacon (UDP `8788`)
+## Discovery (mDNS / DNS-SD)
 
-Receivers broadcast a JSON datagram every ~2s (`internal/discovery`):
+Receivers advertise an **`_lanlink._tcp`** service over mDNS (`internal/discovery`,
+via `grandcat/zeroconf`). The instance name is the hostname; the SRV record
+carries the receiver's HTTP port; TXT records carry extra info:
 
-```json
-{ "service": "lanlink", "name": "<hostname>", "addr": "<ip:port>",
-  "port": "8787", "v": "0.5.0-dev", "open": true }
+```
+_lanlink._tcp.local   port=8787   TXT: v=0.5.0-dev  open=true
 ```
 
-`Scan` collects these, deduped by `addr`. `open: true` means the receiver accepts
-tokenless `/pair/auto`. Mobile does not consume the beacon (managed Expo can't
-receive UDP broadcasts); it sweeps the `/24` for `GET /health` instead.
+`Scan` browses the service and dedupes by resolved `ip:port`. `open=true` means
+the receiver accepts tokenless `/pair/auto`. The mobile app currently discovers
+by sweeping the `/24` for `GET /health` (an active probe, independent of the
+advertisement); mDNS browsing on mobile is planned alongside the phone receiver.
 
 ## Pairing QR payload
 
