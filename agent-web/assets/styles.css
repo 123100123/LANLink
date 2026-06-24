@@ -293,7 +293,6 @@ body {
 .transfer-item {
   padding: 14px 0;
   border-bottom: 1px solid var(--border);
-  animation: row-in 0.28s ease;
 }
 .transfer-item:last-child { border-bottom: none; }
 

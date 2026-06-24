@@ -332,11 +332,19 @@ function copyAddr(btn) {
 
 /* ---------- Render dashboard ---------- */
 
+// setHTMLIfChanged only rewrites the DOM when the markup actually changed, so
+// the 1s state poll doesn't re-render (and re-trigger row animations) needlessly.
+function setHTMLIfChanged(el, html) {
+  if (!el || el.__lastHTML === html) return;
+  el.__lastHTML = html;
+  el.innerHTML = html;
+}
+
 function renderPairedClients(clients) {
   var el = document.getElementById("paired-clients-list");
   if (!el) return;
   if (!clients || clients.length === 0) {
-    el.innerHTML = '<p class="empty">No clients paired this run</p>';
+    setHTMLIfChanged(el, '<p class="empty">No clients paired this run</p>');
     return;
   }
 
@@ -353,7 +361,7 @@ function renderPairedClients(clients) {
       "')\">&times;</button>" +
       "</div>";
   }
-  el.innerHTML = html;
+  setHTMLIfChanged(el, html);
 }
 
 function renderTransferItem(t) {
@@ -489,9 +497,9 @@ function render(state) {
     return t.status === "receiving";
   });
   if (active.length === 0) {
-    activeList.innerHTML = '<p class="empty">No active transfers</p>';
+    setHTMLIfChanged(activeList, '<p class="empty">No active transfers</p>');
   } else {
-    activeList.innerHTML = active.map(renderTransferItem).join("");
+    setHTMLIfChanged(activeList, active.map(renderTransferItem).join(""));
   }
 
   var receivedList = document.getElementById("received-list");
@@ -499,9 +507,9 @@ function render(state) {
     return t.status === "saved" || t.status === "cancelled" || t.status === "failed";
   });
   if (received.length === 0) {
-    receivedList.innerHTML = '<p class="empty">No files received yet</p>';
+    setHTMLIfChanged(receivedList, '<p class="empty">No files received yet</p>');
   } else {
-    receivedList.innerHTML = received.map(renderTransferItem).join("");
+    setHTMLIfChanged(receivedList, received.map(renderTransferItem).join(""));
   }
 }
 
@@ -532,6 +540,14 @@ document.getElementById("browser-newfolder-input").addEventListener("keydown", f
 });
 document.addEventListener("keydown", function (e) {
   if (e.key === "Escape") closeBrowser();
+});
+
+// Ask the web agent to shut down (and free the port) when this tab closes.
+// The agent waits a few seconds; a refresh re-polls /ui/state and cancels it.
+window.addEventListener("pagehide", function () {
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon("/ui/shutdown");
+  }
 });
 
 setInterval(refresh, 1000);

@@ -44,9 +44,13 @@ func subHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case path == "state":
+		cancelShutdown() // an active dashboard cancels any pending auto-shutdown
 		s := agentserver.GetState()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(s)
+
+	case path == "shutdown" && r.Method == http.MethodPost:
+		handleShutdown(w, r)
 
 	case path == "qr":
 		QRHandler(w, r)
