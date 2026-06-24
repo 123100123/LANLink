@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"os"
+	"strings"
 
 	"github.com/123100123/lanlink/internal/network"
 	qr "github.com/mdp/qrterminal/v3"
@@ -15,7 +17,19 @@ type pairPayload struct {
 	Token   string `json:"tk"`
 }
 
+// selectedPairingAddress picks the host:port that clients should use to reach
+// this receiver. LANLINK_HOST forces a specific host; otherwise it uses the
+// exact outbound-route LAN IP (network.PrimaryIP), which ignores Docker bridges
+// and VPN tunnels. Falls back to the old preference heuristic, then loopback.
 func selectedPairingAddress(port string) string {
+	if host := strings.TrimSpace(os.Getenv("LANLINK_HOST")); host != "" {
+		return host + ":" + port
+	}
+
+	if ip := network.PrimaryIP(); ip != "" {
+		return ip + ":" + port
+	}
+
 	ips, err := network.GetLocalIPs()
 	if err != nil || len(ips) == 0 {
 		return "127.0.0.1:" + port
