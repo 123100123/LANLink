@@ -13,7 +13,11 @@
       "resizeMode": "contain",
       "backgroundColor": "#0b1220"
     },
-    "platforms": ["android", "ios", "web"],
+    "platforms": [
+      "android",
+      "ios",
+      "web"
+    ],
     "android": {
       "package": "com.lanlink.app",
       "versionCode": 1,
@@ -32,6 +36,13 @@
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": ["**/*"]
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2ec7427c-8bcb-4218-931f-13cc9491a9a6"
+      }
+    }
   }
 }
