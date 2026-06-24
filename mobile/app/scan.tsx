@@ -1,5 +1,5 @@
-import { useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -15,64 +15,90 @@ import { getSubnetBase, sweepSubnet, type DiscoveredHost } from "@/lib/discovery
 import { savePreferences } from "@/lib/storage/preferences";
 import { useSessionStore } from "@/store/sessionStore";
 
+const RESCAN_DELAY_MS = 3000;
+
 export default function ScanScreen() {
   const router = useRouter();
   const setCredentials = useSessionStore((state) => state.setCredentials);
 
   const [port, setPort] = useState("8787");
   const [scanning, setScanning] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [hosts, setHosts] = useState<DiscoveredHost[]>([]);
-  const [status, setStatus] = useState("Scan your network to find a receiver.");
+  const [status, setStatus] = useState("Searching your network…");
   const [connecting, setConnecting] = useState<string | null>(null);
+
+  const activeRef = useRef(false);
+  const connectingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const baseRef = useRef<string | null>(null);
+  const portRef = useRef(port);
+  portRef.current = port;
 
-  async function handleScan() {
-    const portNum = parseInt(port.trim(), 10) || 8787;
-    setHosts([]);
-    setProgress(0);
-    setScanning(true);
-    setStatus("Locating your network…");
+  const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-    const base = await getSubnetBase();
-    if (!base) {
-      setScanning(false);
-      setStatus("Could not determine your network. Connect to Wi-Fi and try again.");
-      return;
+  // Live discovery: scan automatically while the screen is focused, refreshing
+  // the list every few seconds. No manual tap needed.
+  useFocusEffect(
+    useCallback(() => {
+      activeRef.current = true;
+      connectingRef.current = false;
+      baseRef.current = null;
+      setHosts([]);
+      setConnecting(null);
+      runLoop();
+      return () => {
+        activeRef.current = false;
+        abortRef.current?.abort();
+      };
+    }, []),
+  );
+
+  async function runLoop() {
+    while (activeRef.current) {
+      await runScan();
+      if (!activeRef.current) break;
+      await delay(RESCAN_DELAY_MS);
     }
+  }
 
-    setStatus(`Scanning ${base}0/24 on port ${portNum}…`);
+  async function runScan() {
+    if (connectingRef.current) return;
+
+    const portNum = parseInt(portRef.current.trim(), 10) || 8787;
+
+    if (!baseRef.current) {
+      const base = await getSubnetBase();
+      if (!base) {
+        if (activeRef.current) setStatus("Connect to Wi-Fi to scan.");
+        return;
+      }
+      baseRef.current = base;
+    }
+    if (!activeRef.current) return;
+
+    setScanning(true);
     const controller = new AbortController();
     abortRef.current = controller;
-
     try {
-      const found = await sweepSubnet(
-        base,
-        portNum,
-        (done, total) => setProgress(Math.round((done / total) * 100)),
-        controller.signal,
-      );
+      const found = await sweepSubnet(baseRef.current, portNum, undefined, controller.signal);
+      if (!activeRef.current) return;
       setHosts(found);
       setStatus(
         found.length > 0
-          ? `Found ${found.length} receiver(s). Tap one to connect.`
-          : "No receivers found on this network.",
+          ? `${found.length} receiver${found.length > 1 ? "s" : ""} found — tap to connect`
+          : "No receivers found yet — still searching…",
       );
     } catch {
-      setStatus("Scan failed. Try again.");
+      // ignore transient errors; the next pass retries
     } finally {
-      setScanning(false);
-      abortRef.current = null;
+      if (activeRef.current) setScanning(false);
     }
   }
 
-  function handleCancel() {
-    abortRef.current?.abort();
-    setScanning(false);
-    setStatus("Scan cancelled.");
-  }
-
   async function handleConnect(host: DiscoveredHost) {
+    connectingRef.current = true;
+    activeRef.current = false;
+    abortRef.current?.abort();
     setConnecting(host.address);
     setStatus(`Connecting to ${host.address}…`);
     try {
@@ -96,6 +122,10 @@ export default function ScanScreen() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Auto-connect failed");
       setConnecting(null);
+      connectingRef.current = false;
+      // resume live scanning
+      activeRef.current = true;
+      runLoop();
     }
   }
 
@@ -103,34 +133,14 @@ export default function ScanScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Scan network</Text>
       <Text style={styles.subtitle}>
-        Find LANLink receivers on your Wi-Fi and connect without a token.
+        Receivers on your Wi-Fi appear automatically. Tap one to connect — no token needed.
       </Text>
 
       <View style={styles.card}>
-        <Text style={styles.label}>Receiver port</Text>
-        <TextInput
-          value={port}
-          onChangeText={setPort}
-          style={styles.input}
-          keyboardType="number-pad"
-          placeholder="8787"
-          placeholderTextColor="#5f6f8f"
-        />
-
-        {scanning ? (
-          <>
-            <Pressable style={styles.cancelButton} onPress={handleCancel}>
-              <Text style={styles.buttonText}>Cancel ({progress}%)</Text>
-            </Pressable>
-            <ActivityIndicator color="#4f7cff" style={{ marginTop: 14 }} />
-          </>
-        ) : (
-          <Pressable style={styles.scanButton} onPress={handleScan}>
-            <Text style={styles.buttonText}>Scan network</Text>
-          </Pressable>
-        )}
-
-        <Text style={styles.status}>{status}</Text>
+        <View style={styles.statusRow}>
+          {scanning && <ActivityIndicator color="#4f7cff" style={{ marginRight: 10 }} />}
+          <Text style={styles.status}>{status}</Text>
+        </View>
 
         {hosts.map((host) => (
           <Pressable
@@ -150,6 +160,18 @@ export default function ScanScreen() {
             )}
           </Pressable>
         ))}
+
+        <View style={styles.portRow}>
+          <Text style={styles.portLabel}>Receiver port</Text>
+          <TextInput
+            value={port}
+            onChangeText={setPort}
+            style={styles.portInput}
+            keyboardType="number-pad"
+            placeholder="8787"
+            placeholderTextColor="#5f6f8f"
+          />
+        </View>
       </View>
 
       <Pressable style={styles.backButton} onPress={() => router.back()}>
@@ -184,41 +206,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#1d2a44",
   },
-  label: {
-    color: "#d9e2f2",
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: "#09101d",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: "#fff",
-    borderWidth: 1,
-    borderColor: "#23324f",
-    marginBottom: 14,
-  },
-  scanButton: {
-    backgroundColor: "#4f7cff",
-    paddingVertical: 14,
+  statusRow: {
+    flexDirection: "row",
     alignItems: "center",
-    borderRadius: 14,
-  },
-  cancelButton: {
-    backgroundColor: "#b94d4d",
-    paddingVertical: 14,
-    alignItems: "center",
-    borderRadius: 14,
-  },
-  buttonText: {
-    color: "#fff",
-    fontWeight: "700",
+    marginBottom: 4,
   },
   status: {
     color: "#9db1d1",
-    marginTop: 14,
-    marginBottom: 4,
+    flex: 1,
   },
   hostRow: {
     flexDirection: "row",
@@ -226,7 +221,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#09101d",
     borderRadius: 14,
     padding: 14,
-    marginTop: 10,
+    marginTop: 12,
     borderWidth: 1,
     borderColor: "#23324f",
   },
@@ -243,6 +238,30 @@ const styles = StyleSheet.create({
   connectLabel: {
     color: "#4f7cff",
     fontWeight: "700",
+  },
+  portRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#1d2a44",
+  },
+  portLabel: {
+    color: "#7d8aa5",
+    fontSize: 13,
+  },
+  portInput: {
+    backgroundColor: "#09101d",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    color: "#fff",
+    borderWidth: 1,
+    borderColor: "#23324f",
+    minWidth: 96,
+    textAlign: "center",
   },
   backButton: {
     marginTop: 20,
