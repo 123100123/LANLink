@@ -7,14 +7,27 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0b1220",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0b1220"
+    },
     "platforms": ["android", "ios", "web"],
     "android": {
       "package": "com.lanlink.app",
-      "versionCode": 1
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4f7cff"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.lanlink.app",
       "supportsTablet": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "updates": {
       "fallbackToCacheTimeout": 0
