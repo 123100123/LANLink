@@ -3,10 +3,19 @@
     "name": "LANLink",
     "slug": "lanlink-mobile",
     "scheme": "lanlink",
-    "version": "0.1.0",
+    "version": "0.5.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b1220",
     "platforms": ["android", "ios", "web"],
+    "android": {
+      "package": "com.lanlink.app",
+      "versionCode": 1
+    },
+    "ios": {
+      "bundleIdentifier": "com.lanlink.app",
+      "supportsTablet": true
+    },
     "updates": {
       "fallbackToCacheTimeout": 0
     },

@@ -55,7 +55,7 @@ export default function PairScreen() {
   const setCredentials = useSessionStore((state) => state.setCredentials);
 
   const [deviceName, setDeviceName] = useState("lanlink-mobile");
-  const [token, setToken] = useState("123456");
+  const [token, setToken] = useState("");
   const [address, setAddress] = useState(agentAddress);
   const [status, setStatus] = useState<string>("Ready");
   const [loading, setLoading] = useState(false);
