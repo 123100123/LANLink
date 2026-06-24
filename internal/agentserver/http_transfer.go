@@ -1,4 +1,4 @@
-package main
+package agentserver
 
 import (
 	"encoding/json"
@@ -9,12 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/123100123/lanlink/agent/dashboard"
 	transferpkg "github.com/123100123/lanlink/internal/transfer"
 	"github.com/123100123/lanlink/protocol"
 )
 
-var httpTransferManager = transferpkg.NewManager(dashboard.GetOutputDir)
+var httpTransferManager = transferpkg.NewManager(GetOutputDir)
 
 func transferStartHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -117,7 +116,7 @@ func transferStartHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dashboard.AddTransfer(req.TransferID, req.Filename, req.Size)
+	AddTransfer(req.TransferID, req.Filename, req.Size)
 
 	writeTransferJSON(
 		w,
@@ -236,7 +235,7 @@ func handleHTTPTransferChunk(
 
 	defer r.Body.Close()
 
-	if dashboard.IsTransferCancelled(transferID) {
+	if IsTransferCancelled(transferID) {
 		httpTransferManager.Cancel(transferID)
 		writeTransferJSON(
 			w,
@@ -284,7 +283,7 @@ func handleHTTPTransferChunk(
 		}
 
 		httpTransferManager.Cancel(transferID)
-		dashboard.FailTransfer(transferID, "write chunk failed")
+		FailTransfer(transferID, "write chunk failed")
 		writeTransferJSON(
 			w,
 			http.StatusBadRequest,
@@ -299,7 +298,7 @@ func handleHTTPTransferChunk(
 		return
 	}
 
-	dashboard.UpdateTransfer(transferID, received, 0)
+	UpdateTransfer(transferID, received, 0)
 
 	writeTransferJSON(
 		w,
@@ -355,7 +354,7 @@ func handleHTTPTransferFinish(
 			message = "file size mismatch"
 		}
 
-		dashboard.FailTransfer(transferID, message)
+		FailTransfer(transferID, message)
 		writeTransferJSON(
 			w,
 			status,
@@ -370,7 +369,7 @@ func handleHTTPTransferFinish(
 		return
 	}
 
-	dashboard.CompleteTransfer(transferID, active.FinalPath)
+	CompleteTransfer(transferID, active.FinalPath)
 
 	writeTransferJSON(
 		w,

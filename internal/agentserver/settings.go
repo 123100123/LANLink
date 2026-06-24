@@ -1,4 +1,4 @@
-package dashboard
+package agentserver
 
 import (
 	"encoding/json"

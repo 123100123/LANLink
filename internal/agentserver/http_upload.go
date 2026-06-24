@@ -1,4 +1,4 @@
-package main
+package agentserver
 
 import (
 	"encoding/json"
@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
-
-	"github.com/123100123/lanlink/agent/dashboard"
 )
 
 func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +41,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	safeName := filepath.Base(filename)
-	outputDir := dashboard.GetOutputDir()
+	outputDir := GetOutputDir()
 
 	tmpDir := filepath.Join(outputDir, "tmp")
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
@@ -66,7 +64,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	finalPath := uniqueUploadPath(outputDir, safeName)
 
-	dashID := dashboard.ReserveTransferID(preferredID, safeName)
+	dashID := ReserveTransferID(preferredID, safeName)
 
 	tmpName := dashID + "_" + safeName
 	tempPath := filepath.Join(tmpDir, tmpName)
@@ -90,7 +88,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	dashboard.AddTransfer(dashID, safeName, totalSize)
+	AddTransfer(dashID, safeName, totalSize)
 	startTime := time.Now()
 
 	buf := make([]byte, 512*1024)
@@ -98,7 +96,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	lastDashUpdate := startTime
 
 	for {
-		if dashboard.IsTransferCancelled(dashID) {
+		if IsTransferCancelled(dashID) {
 			out.Close()
 			os.Remove(tempPath)
 			log.Printf("upload: cancelled %s (%d bytes received)", safeName, written)
@@ -117,7 +115,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 			if writeErr != nil {
 				out.Close()
 				os.Remove(tempPath)
-				dashboard.FailTransfer(dashID, "write failed")
+				FailTransfer(dashID, "write failed")
 				log.Println("upload: write failed:", writeErr)
 				writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 					"status": "error",
@@ -130,7 +128,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 			if time.Since(lastDashUpdate) >= 500*time.Millisecond {
 				speed := calcSpeed(written, startTime)
-				dashboard.UpdateTransfer(dashID, written, speed)
+				UpdateTransfer(dashID, written, speed)
 				lastDashUpdate = time.Now()
 			}
 		}
@@ -142,7 +140,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		if readErr != nil {
 			out.Close()
 			os.Remove(tempPath)
-			dashboard.FailTransfer(dashID, "read failed")
+			FailTransfer(dashID, "read failed")
 			log.Println("upload: read failed:", readErr)
 			writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 				"status": "error",
@@ -153,12 +151,12 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	finalSpeed := calcSpeed(written, startTime)
-	dashboard.UpdateTransfer(dashID, written, finalSpeed)
+	UpdateTransfer(dashID, written, finalSpeed)
 
 	if err := out.Sync(); err != nil {
 		out.Close()
 		os.Remove(tempPath)
-		dashboard.FailTransfer(dashID, "sync failed")
+		FailTransfer(dashID, "sync failed")
 		log.Println("upload: sync failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
@@ -169,7 +167,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := out.Close(); err != nil {
 		os.Remove(tempPath)
-		dashboard.FailTransfer(dashID, "close failed")
+		FailTransfer(dashID, "close failed")
 		log.Println("upload: close failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
@@ -180,7 +178,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	if err := os.Rename(tempPath, finalPath); err != nil {
 		os.Remove(tempPath)
-		dashboard.FailTransfer(dashID, "rename failed")
+		FailTransfer(dashID, "rename failed")
 		log.Println("upload: rename failed:", err)
 		writeUploadJSON(w, http.StatusInternalServerError, map[string]any{
 			"status": "error",
@@ -189,7 +187,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dashboard.CompleteTransfer(dashID, finalPath)
+	CompleteTransfer(dashID, finalPath)
 
 	log.Printf("upload: saved %s (%d bytes) as %s [%.1f MB/s]", safeName, written, finalPath, float64(finalSpeed)/1024/1024)
 

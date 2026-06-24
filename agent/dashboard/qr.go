@@ -7,14 +7,14 @@ import (
 	"image/png"
 	"net/http"
 
+	"github.com/123100123/lanlink/internal/agentserver"
 	rscqr "rsc.io/qr"
 )
 
 func QRHandler(w http.ResponseWriter, r *http.Request) {
-	mu.Lock()
-	token := state.Token
-	address := state.Address
-	mu.Unlock()
+	s := agentserver.GetState()
+	token := s.Token
+	address := s.Address
 
 	if token == "" || address == "" {
 		http.Error(w, "no pairing data", http.StatusServiceUnavailable)

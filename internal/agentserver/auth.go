@@ -1,4 +1,4 @@
-package main
+package agentserver
 
 import (
 	"net/http"

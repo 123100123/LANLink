@@ -1,12 +1,10 @@
-package main
+package agentserver
 
 import (
 	"fmt"
 	"os"
 	"strings"
 	"time"
-
-	"github.com/123100123/lanlink/agent/dashboard"
 )
 
 var previouslyActive = make(map[string]bool)
@@ -23,8 +21,8 @@ func startTerminalProgress() {
 		}
 		lastPrinted = now
 
-		active := dashboard.GetActiveTransfers()
-		completed := dashboard.GetRecentlyCompleted()
+		active := GetActiveTransfers()
+		completed := GetRecentlyCompleted()
 
 		currentActive := make(map[string]bool)
 		for _, t := range active {
@@ -47,7 +45,7 @@ func startTerminalProgress() {
 	}
 }
 
-func renderTerminalTransfer(t dashboard.Transfer) {
+func renderTerminalTransfer(t Transfer) {
 	name := t.Filename
 	if len(name) > 30 {
 		name = name[:27] + "..."

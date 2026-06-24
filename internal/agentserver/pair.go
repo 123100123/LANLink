@@ -1,11 +1,10 @@
-package main
+package agentserver
 
 import (
 	"encoding/json"
 	"log"
 	"net/http"
 
-	"github.com/123100123/lanlink/agent/dashboard"
 	"github.com/123100123/lanlink/internal/auth"
 	"github.com/123100123/lanlink/internal/config"
 	"github.com/123100123/lanlink/internal/paths"
@@ -128,7 +127,7 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dashboard.AddPairedClient(device.DeviceID, device.DeviceName)
+	AddPairedClient(device.DeviceID, device.DeviceName)
 
 	if err := pairingManager.Rotate(); err != nil {
 		log.Println("failed to rotate pairing token:", err)
@@ -136,7 +135,7 @@ func pairHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newToken := pairingManager.Token()
-	dashboard.SetToken(newToken)
+	SetToken(newToken)
 	log.Println("New pairing token:", newToken)
 	log.Println("Use this token to pair a new device.")
 	log.Println("A new token will be generated after each successful pairing.")

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	agentweb "github.com/123100123/lanlink/agent-web"
+	"github.com/123100123/lanlink/internal/agentserver"
 	"github.com/123100123/lanlink/internal/paths"
 	"github.com/123100123/lanlink/internal/store"
 )
@@ -43,7 +44,7 @@ func subHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case path == "state":
-		s := GetState()
+		s := agentserver.GetState()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(s)
 
@@ -51,7 +52,7 @@ func subHandler(w http.ResponseWriter, r *http.Request) {
 		QRHandler(w, r)
 
 	case path == "settings":
-		s := CurrentSettings()
+		s := agentserver.CurrentSettings()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(s)
 
@@ -59,9 +60,9 @@ func subHandler(w http.ResponseWriter, r *http.Request) {
 		handleSetOutputDir(w, r)
 
 	case path == "settings/output-dir/reset" && r.Method == http.MethodPost:
-		ResetOutputDir()
+		agentserver.ResetOutputDir()
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "reset", "output_dir": GetOutputDir()})
+		json.NewEncoder(w).Encode(map[string]string{"status": "reset", "output_dir": agentserver.GetOutputDir()})
 
 	case path == "fs/list":
 		handleFsList(w, r)
@@ -110,7 +111,7 @@ func handleSetOutputDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := SetOutputDir(req.Path); err != nil {
+	if err := agentserver.SetOutputDir(req.Path); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
@@ -118,7 +119,7 @@ func handleSetOutputDir(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "saved", "output_dir": GetOutputDir()})
+	json.NewEncoder(w).Encode(map[string]string{"status": "saved", "output_dir": agentserver.GetOutputDir()})
 }
 
 func handleUnpairClient(w http.ResponseWriter, r *http.Request) {
@@ -156,7 +157,7 @@ func handleUnpairClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	RemovePairedClient(req.DeviceID)
+	agentserver.RemovePairedClient(req.DeviceID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -174,7 +175,7 @@ func handleCancelTransfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	CancelTransfer(req.TransferID)
+	agentserver.CancelTransfer(req.TransferID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "transfer_id": req.TransferID})

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/123100123/lanlink/internal/agentserver"
 )
 
 // browse.go implements the dashboard folder browser. These routes are reached
@@ -118,7 +120,7 @@ func handleFsMkdir(w http.ResponseWriter, r *http.Request) {
 // defaultBrowseDir picks a sensible starting directory: the current output
 // folder if it resolves to an absolute path, otherwise the user's home.
 func defaultBrowseDir() string {
-	if cur := GetOutputDir(); cur != "" {
+	if cur := agentserver.GetOutputDir(); cur != "" {
 		if abs, err := filepath.Abs(cur); err == nil {
 			if info, err := os.Stat(abs); err == nil && info.IsDir() {
 				return abs
