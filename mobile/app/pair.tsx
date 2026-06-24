@@ -199,13 +199,6 @@ export default function PairScreen() {
           <Text style={styles.buttonText}>Scan agent QR code</Text>
         </Pressable>
 
-        <Pressable
-          style={styles.networkScanButton}
-          onPress={() => router.push("/scan")}
-        >
-          <Text style={styles.buttonText}>Scan network (no token)</Text>
-        </Pressable>
-
         <View style={styles.divider}>
           <View style={styles.dividerLine} />
           <Text style={styles.dividerText}>or enter manually</Text>
@@ -312,15 +305,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     borderRadius: 14,
-  },
-  networkScanButton: {
-    backgroundColor: "#19253d",
-    paddingVertical: 14,
-    alignItems: "center",
-    borderRadius: 14,
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: "#23324f",
   },
   divider: {
     flexDirection: "row",

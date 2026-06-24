@@ -283,53 +283,6 @@ function useThisFolder() {
   showToast("Folder selected — click Save to apply");
 }
 
-/* ---------- Network scan ---------- */
-
-async function scanNetwork() {
-  var status = document.getElementById("scan-status");
-  var list = document.getElementById("scan-list");
-  status.textContent = "Scanning…";
-  status.style.color = "#9db1d1";
-  list.innerHTML = '<p class="empty">Scanning the network…</p>';
-  try {
-    var resp = await fetch("/ui/discovery/scan", { cache: "no-store" });
-    var data = await resp.json();
-    status.textContent = "";
-    if (!data.hosts || data.hosts.length === 0) {
-      list.innerHTML = '<p class="empty">No other receivers found on the network.</p>';
-      return;
-    }
-    list.innerHTML = data.hosts
-      .map(function (h) {
-        var openBadge = h.open
-          ? '<span class="transfer-status status-saved">open</span>'
-          : "";
-        return (
-          '<div class="transfer-item"><div class="transfer-top">' +
-          '<span class="transfer-filename">' + escapeHtml(h.name || "receiver") + "</span>" +
-          openBadge +
-          '<button class="btn btn-ghost btn-sm" data-addr="' + escapeHtml(h.addr) +
-          '" onclick="copyAddr(this)">Copy</button>' +
-          "</div>" +
-          '<div class="transfer-details mono">' + escapeHtml(h.addr) +
-          " · v" + escapeHtml(h.v || "?") + "</div></div>"
-        );
-      })
-      .join("");
-  } catch (e) {
-    status.textContent = "Scan failed";
-    status.style.color = "#ff7b7b";
-    list.innerHTML = '<p class="empty">Scan failed.</p>';
-  }
-}
-
-function copyAddr(btn) {
-  var addr = btn.getAttribute("data-addr");
-  navigator.clipboard.writeText(addr).then(function () {
-    showToast("Address copied");
-  });
-}
-
 /* ---------- Render dashboard ---------- */
 
 // setHTMLIfChanged only rewrites the DOM when the markup actually changed, so

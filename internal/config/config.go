@@ -12,7 +12,6 @@ const (
 	defaultPort                = "8787"
 	defaultTransferChunkSize   = 64 * 1024
 	defaultTransferMaxInFlight = 16
-	defaultDiscoveryPort       = 8788
 )
 
 type Config struct {
@@ -20,9 +19,6 @@ type Config struct {
 
 	TransferChunkSize         int
 	TransferMaxInFlightChunks int
-
-	// DiscoveryPort is the UDP port used by the LAN discovery beacon/scan.
-	DiscoveryPort int
 }
 
 func Load() Config {
@@ -43,11 +39,6 @@ func Load() Config {
 			"TRANSFER_MAX_IN_FLIGHT_CHUNKS",
 			defaultTransferMaxInFlight,
 		),
-
-		DiscoveryPort: envInt(
-			"LANLINK_DISCOVERY_PORT",
-			defaultDiscoveryPort,
-		),
 	}.withDefaults()
 }
 
@@ -62,10 +53,6 @@ func (c Config) withDefaults() Config {
 
 	if c.TransferMaxInFlightChunks <= 0 {
 		c.TransferMaxInFlightChunks = defaultTransferMaxInFlight
-	}
-
-	if c.DiscoveryPort <= 0 {
-		c.DiscoveryPort = defaultDiscoveryPort
 	}
 
 	return c

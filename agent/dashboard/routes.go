@@ -74,9 +74,6 @@ func subHandler(w http.ResponseWriter, r *http.Request) {
 	case path == "fs/mkdir" && r.Method == http.MethodPost:
 		handleFsMkdir(w, r)
 
-	case path == "discovery/scan":
-		handleDiscoveryScan(w, r)
-
 	case path == "clients/unpair" && r.Method == http.MethodPost:
 		handleUnpairClient(w, r)
 

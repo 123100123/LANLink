@@ -32,23 +32,6 @@ export async function pairDevice(address: string, body: PairRequest): Promise<Pa
   return json;
 }
 
-export async function pairAuto(address: string, deviceName: string): Promise<PairResponse> {
-  const response = await fetch(httpUrl(address, "/pair/auto"), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ device_name: deviceName }),
-  });
-
-  const json = await parseJson<PairResponse>(response);
-  if (!response.ok || json.status !== "paired") {
-    throw new Error(json.error || `Auto-connect failed (${response.status})`);
-  }
-
-  return json;
-}
-
 export async function fetchDevices(address: string, authToken: string): Promise<DevicesResponse> {
   const response = await fetch(httpUrl(address, "/devices"), {
     headers: {

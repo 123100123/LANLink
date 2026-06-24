@@ -3,11 +3,13 @@
 # Build LANLink desktop release binaries.
 #
 # Produces pure-Go (CGO disabled) cross-platform executables under ./release:
-#   - lanlink-<os>-<arch>[.exe]        the terminal binary (receive/send/scan)
-#   - lanlink-agent-<os>-<arch>[.exe]  the dashboard build (serves the web UI)
+#   - lanlink-<os>-<arch>[.exe]      the web build: runs a receiver AND serves
+#                                    the dashboard, opening the browser on start
+#   - lanlink-cmd-<os>-<arch>[.exe]  the terminal build: receive/send/scan
+#                                    entirely in the terminal (no web UI)
 #
-# The terminal `lanlink` binary has zero dependency on agent-web; the
-# `lanlink-agent` binary embeds the dashboard. Both come from the same source.
+# The terminal build (./cmd/lanlink) has zero dependency on agent-web; the web
+# build (./agent) embeds the dashboard and carries the app icon on Windows.
 #
 # Usage:
 #   scripts/build-release.sh            # linux/amd64 + windows/amd64
@@ -26,12 +28,12 @@ export CGO_ENABLED=0
 
 build() {
   local goos="$1" goarch="$2" ext="$3"
-  echo "  lanlink        $goos/$goarch"
+  echo "  lanlink (web)      $goos/$goarch"
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "-s -w" \
-    -o "$OUT/lanlink-$goos-$goarch$ext" ./cmd/lanlink
-  echo "  lanlink-agent  $goos/$goarch"
+    -o "$OUT/lanlink-$goos-$goarch$ext" ./agent
+  echo "  lanlink-cmd (term) $goos/$goarch"
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "-s -w" \
-    -o "$OUT/lanlink-agent-$goos-$goarch$ext" ./agent
+    -o "$OUT/lanlink-cmd-$goos-$goarch$ext" ./cmd/lanlink
 }
 
 echo "Building LANLink $VERSION release binaries…"
