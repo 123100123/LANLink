@@ -90,6 +90,17 @@
     </section>
 
     <section class="card full-width">
+      <h2>Network</h2>
+      <div class="settings-actions" style="margin-bottom: 12px;">
+        <button class="btn btn-ghost" onclick="scanNetwork()">Scan network</button>
+        <span class="settings-status" id="scan-status"></span>
+      </div>
+      <div id="scan-list" class="transfer-list">
+        <p class="empty">Scan to find other LANLink receivers on your network.</p>
+      </div>
+    </section>
+
+    <section class="card full-width">
       <h2>Active transfers</h2>
       <div id="active-list" class="transfer-list">
         <p class="empty">No active transfers</p>
