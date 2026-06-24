@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	ws "github.com/123100123/lanlink/agent/ws"
 	"github.com/123100123/lanlink/internal/config"
@@ -108,6 +110,18 @@ func Run(opts Options) error {
 
 	listenAddr := ":" + cfg.Port
 
+	// Bind before printing the startup banner so a port conflict fails fast
+	// with a clear, actionable message.
+	listener, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		if isAddrInUse(err) {
+			log.Printf("Cannot start LANLink: port %s is already in use.", cfg.Port)
+			log.Println("Another LANLink instance may already be running. Stop it, or start on a")
+			log.Printf("different port, e.g.:  LANLINK_PORT=8788 %s", filepath.Base(os.Args[0]))
+		}
+		return err
+	}
+
 	if ips, err := network.GetLocalIPs(); err == nil {
 		log.Println("\nAvailable addresses:")
 		log.Println("127.0.0.1:" + cfg.Port)
@@ -125,11 +139,6 @@ func Run(opts Options) error {
 	printPairingQR(token, cfg.Port)
 	log.Println("")
 
-	listener, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		return err
-	}
-
 	log.Println("LANLink agent listening on", listenAddr)
 
 	if opts.OnListening != nil {
@@ -137,4 +146,12 @@ func Run(opts Options) error {
 	}
 
 	return http.Serve(listener, nil)
+}
+
+// isAddrInUse reports whether err is an "address already in use" bind error,
+// across Linux/macOS and Windows.
+func isAddrInUse(err error) bool {
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "address already in use") ||
+		strings.Contains(s, "only one usage of each socket address")
 }
