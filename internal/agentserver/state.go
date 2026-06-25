@@ -218,7 +218,10 @@ func CompleteTransfer(id, path string) {
 				t.Received = t.Total
 			}
 
-			if t.Received > 0 {
+			// Keep the receive-throughput speed measured at the last byte (set
+			// by the upload handler just before fsync). Only compute here if it
+			// was never set, so the fsync+rename tail never drags the number down.
+			if t.Speed <= 0 && t.Received > 0 {
 				elapsed := transferElapsedSeconds(t, nowNano)
 				if elapsed > 0.001 {
 					t.Speed = int64(float64(t.Received) / elapsed)

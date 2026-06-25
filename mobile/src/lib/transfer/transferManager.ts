@@ -258,7 +258,12 @@ async function runStreamingUpload(item: TransferItem): Promise<void> {
       );
     }
 
-    const p = total > 0 ? Math.min(1, sentBytes / total) : 0;
+    // e.loaded reaches total when the bytes are handed to the OS send buffer —
+    // which races ahead of what the receiver has actually gotten over the air
+    // (deep buffers on a phone-hotspot link). Hold the live bar just under 100%
+    // so "done" means server-confirmed (set in the onload branch below), and the
+    // bar doesn't claim completion while bytes are still in flight.
+    const p = total > 0 ? Math.min(0.99, sentBytes / total) : 0;
 
     if (
       now - lastUpdateTime >= PROGRESS_UPDATE_INTERVAL_MS ||
@@ -293,12 +298,17 @@ async function runStreamingUpload(item: TransferItem): Promise<void> {
       throw new Error(json.error || "Upload failed");
     }
 
+    // Headline speed = true end-to-end rate: the file size over the wall time
+    // from start to the server's confirmed save. This absorbs the send-buffer
+    // head start and the over-the-air drain, so it matches the desktop's number
+    // instead of the inflated "bytes buffered / time" mid-transfer rate.
+    const endElapsed = (Date.now() - startTime) / 1000;
     useTransferStore.getState().updateTransfer(item.id, {
       status: "completed",
       progress: 1,
       sentBytes: item.size,
-      speed: 0,
-      elapsed: (Date.now() - startTime) / 1000,
+      speed: endElapsed > 0 ? item.size / endElapsed : 0,
+      elapsed: endElapsed,
       completedAt: Date.now(),
       savedPath: json.path,
     });
