@@ -62,11 +62,16 @@ size, fsyncs, and renames into the output folder.
 
 ```
 POST /transfers/upload
-Headers: Authorization, X-Filename, X-Transfer-Id
-Body: raw file bytes
+Headers: Authorization, X-Filename, X-Transfer-Id, X-File-Size
+Body: raw file bytes  — or — multipart/form-data with a single `file` part
 ```
 
-Single-request streaming upload. Response: `{ "status": "saved", "path": ... }`.
+Single-request streaming upload. The body may be either the raw file bytes or a
+`multipart/form-data` envelope carrying one `file` part (the mobile app uses
+multipart so React Native can stream a picked `content://` URI directly). The
+server streams whichever body straight to disk. `X-File-Size` carries the true
+file size for progress (with multipart, `Content-Length` includes envelope
+overhead). Response: `{ "status": "saved", "path": ... }`.
 
 ### Resumable transfer
 

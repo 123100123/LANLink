@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -31,6 +34,36 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	filename := r.Header.Get("X-Filename")
 	preferredID := r.Header.Get("X-Transfer-Id")
+
+	// The body is either the raw file bytes (default) or a multipart/form-data
+	// envelope with a single file part. The mobile app streams content:// URIs
+	// as multipart (React Native can only stream a picked file through FormData);
+	// other clients POST the raw body. Both feed the same streaming loop below.
+	var src io.Reader = r.Body
+	if mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err == nil &&
+		strings.HasPrefix(mediaType, "multipart/") {
+		mr, err := r.MultipartReader()
+		if err != nil {
+			writeUploadJSON(w, http.StatusBadRequest, map[string]any{
+				"status": "error",
+				"error":  "invalid multipart body",
+			})
+			return
+		}
+		part, err := firstFilePart(mr)
+		if err != nil {
+			writeUploadJSON(w, http.StatusBadRequest, map[string]any{
+				"status": "error",
+				"error":  "no file part in multipart body",
+			})
+			return
+		}
+		defer part.Close()
+		src = part
+		if filename == "" {
+			filename = part.FileName()
+		}
+	}
 
 	if filename == "" {
 		writeUploadJSON(w, http.StatusBadRequest, map[string]any{
@@ -79,13 +112,16 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Prefer the client-declared file size: with multipart, r.ContentLength
+	// includes the envelope overhead, so X-File-Size is the accurate total.
 	var totalSize int64
-	if r.ContentLength > 0 {
-		totalSize = r.ContentLength
-	} else if hs := r.Header.Get("X-File-Size"); hs != "" {
+	if hs := r.Header.Get("X-File-Size"); hs != "" {
 		if v, err := strconv.ParseInt(hs, 10, 64); err == nil && v > 0 {
 			totalSize = v
 		}
+	}
+	if totalSize == 0 && r.ContentLength > 0 {
+		totalSize = r.ContentLength
 	}
 
 	AddTransfer(dashID, safeName, totalSize)
@@ -108,7 +144,7 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		n, readErr := r.Body.Read(buf)
+		n, readErr := src.Read(buf)
 
 		if n > 0 {
 			wn, writeErr := out.Write(buf[:n])
@@ -198,6 +234,21 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		"path":        finalPath,
 		"received":    written,
 	})
+}
+
+// firstFilePart advances a multipart reader to the first part that carries a
+// filename (i.e. a file upload, not a plain form field) and returns it.
+func firstFilePart(mr *multipart.Reader) (*multipart.Part, error) {
+	for {
+		part, err := mr.NextPart()
+		if err != nil {
+			return nil, err
+		}
+		if part.FileName() != "" {
+			return part, nil
+		}
+		part.Close()
+	}
 }
 
 func calcSpeed(bytes int64, startTime time.Time) int64 {

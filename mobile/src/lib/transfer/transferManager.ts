@@ -1,4 +1,3 @@
-import * as FileSystem from "expo-file-system/legacy";
 import { httpUrl } from "@/lib/api/endpoints";
 import { createId } from "@/lib/protocol/envelope";
 import { useTransferStore, type TransferItem } from "@/store/transferStore";
@@ -6,7 +5,7 @@ import { useTransferStore, type TransferItem } from "@/store/transferStore";
 const PROGRESS_UPDATE_INTERVAL_MS = 250;
 const PROGRESS_UPDATE_MIN_DELTA = 0.01;
 
-let activeTask: FileSystem.UploadTask | null = null;
+let activeXhr: XMLHttpRequest | null = null;
 let queueLoopRunning = false;
 let intentionallyCancelled = false;
 
@@ -22,86 +21,17 @@ function getActiveUpload(): TransferItem | undefined {
   );
 }
 
-function isContentUri(uri: string): boolean {
-  return uri.startsWith("content://");
-}
-
-async function getFreeDiskSpace(): Promise<number> {
-  try {
-    return await FileSystem.getFreeDiskStorageAsync();
-  } catch {
-    return -1;
+function abortActive(): void {
+  if (activeXhr) {
+    try {
+      activeXhr.abort();
+    } catch {}
+    activeXhr = null;
   }
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-async function copyToCache(
-  item: TransferItem
-): Promise<{ uploadUri: string; isTemp: boolean }> {
-  const freeSpace = await getFreeDiskSpace();
-  if (
-    freeSpace >= 0 &&
-    item.size > 0 &&
-    freeSpace < item.size + 1024 * 1024
-  ) {
-    throw new Error(
-      `Not enough disk space. Need ${formatSize(item.size)}, only ${formatSize(freeSpace)} available.`
-    );
-  }
-
-  const cacheDir = FileSystem.cacheDirectory ?? "";
-  const tempPath = `${cacheDir}upload_${item.id}_${item.filename}`;
-  useTransferStore.getState().updateTransfer(item.id, {
-    tempUri: tempPath,
-  });
-  await FileSystem.copyAsync({ from: item.uri, to: tempPath });
-  return { uploadUri: tempPath, isTemp: true };
-}
-
-async function cleanupTempFile(item: TransferItem): Promise<void> {
-  const tempUri = item.tempUri;
-  if (!tempUri) return;
-  try {
-    const info = await FileSystem.getInfoAsync(tempUri);
-    if (info.exists) {
-      await FileSystem.deleteAsync(tempUri, { idempotent: true });
-    }
-  } catch {}
-}
-
-function createUploadTask(
-  item: TransferItem,
-  uploadUri: string,
-  onProgress: (progress: {
-    totalBytesSent: number;
-    totalBytesExpectedToSend: number;
-  }) => void
-): FileSystem.UploadTask {
-  return FileSystem.createUploadTask(
-    httpUrl(item.agentAddress, "/transfers/upload"),
-    uploadUri,
-    {
-      httpMethod: "POST",
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers: {
-        Authorization: `Bearer ${item.authToken}`,
-        "X-Filename": item.filename,
-        "X-Transfer-Id": item.id,
-      },
-    },
-    onProgress
-  );
 }
 
 export function enqueueFiles(
-  files: { uri: string; name: string; size: number }[],
+  files: { uri: string; name: string; size: number; mimeType?: string }[],
   agentAddress: string,
   authToken: string
 ): number {
@@ -109,6 +39,7 @@ export function enqueueFiles(
     id: createId("transfer"),
     uri: f.uri,
     filename: f.name,
+    mimeType: f.mimeType,
     size: f.size,
     agentAddress,
     authToken,
@@ -132,22 +63,12 @@ export function cancelTransfer(id: string): void {
   const active = getActiveUpload();
   if (active && active.id === id) {
     intentionallyCancelled = true;
-    if (activeTask) {
-      activeTask.cancelAsync();
-      activeTask = null;
-    }
-    useTransferStore.getState().updateTransfer(id, {
-      status: "cancelled",
-      completedAt: Date.now(),
-    });
-    cleanupTempFile(t);
-  } else {
-    useTransferStore.getState().updateTransfer(id, {
-      status: "cancelled",
-      completedAt: Date.now(),
-    });
-    cleanupTempFile(t);
+    abortActive();
   }
+  useTransferStore.getState().updateTransfer(id, {
+    status: "cancelled",
+    completedAt: Date.now(),
+  });
 }
 
 export function retryTransfer(id: string): void {
@@ -166,17 +87,12 @@ export function retryTransfer(id: string): void {
 }
 
 export function removeTransfer(id: string): void {
-  const t = useTransferStore.getState().transfers.find((x) => x.id === id);
   const active = getActiveUpload();
   if (active && active.id === id) {
     intentionallyCancelled = true;
-    if (activeTask) {
-      activeTask.cancelAsync();
-      activeTask = null;
-    }
+    abortActive();
   }
   useTransferStore.getState().removeTransfer(id);
-  if (t) cleanupTempFile(t);
 }
 
 export function stopAll(): void {
@@ -185,10 +101,7 @@ export function stopAll(): void {
 
   if (active) {
     intentionallyCancelled = true;
-    if (activeTask) {
-      activeTask.cancelAsync();
-      activeTask = null;
-    }
+    abortActive();
     store.updateTransfer(active.id, {
       status: "cancelled",
       completedAt: Date.now(),
@@ -230,12 +143,6 @@ export function startAll(): void {
 }
 
 export function clearCompleted(): void {
-  const completed = useTransferStore
-    .getState()
-    .transfers.filter((t) => t.status === "completed");
-  for (const t of completed) {
-    cleanupTempFile(t);
-  }
   useTransferStore.getState().clearCompleted();
 }
 
@@ -261,45 +168,80 @@ function processQueue(): void {
   })();
 }
 
+// Streams the picked file straight to the receiver via FormData. React Native's
+// native networking opens the (content:// or file://) URI and streams it through
+// okhttp without buffering the whole file into memory — so large files upload
+// fast and never freeze the UI on a cache copy.
+function uploadViaXhr(
+  item: TransferItem,
+  onProgress: (sentBytes: number) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    activeXhr = xhr;
+
+    xhr.open("POST", httpUrl(item.agentAddress, "/transfers/upload"));
+    xhr.setRequestHeader("Authorization", `Bearer ${item.authToken}`);
+    xhr.setRequestHeader("X-Filename", item.filename);
+    xhr.setRequestHeader("X-Transfer-Id", item.id);
+    if (item.size > 0) {
+      // content:// URIs often report no content-length, so tell the server the
+      // real size for an accurate progress total.
+      xhr.setRequestHeader("X-File-Size", String(item.size));
+    }
+
+    xhr.upload.onprogress = (e) => {
+      // e.total is unreliable for content:// (can be 0); progress is computed
+      // against item.size in the caller.
+      onProgress(e.loaded);
+    };
+
+    xhr.onload = () => {
+      activeXhr = null;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.responseText);
+        return;
+      }
+      let msg = `Upload failed (${xhr.status})`;
+      try {
+        const j = JSON.parse(xhr.responseText) as { error?: string };
+        if (j.error) msg = j.error;
+      } catch {}
+      reject(new Error(msg));
+    };
+
+    xhr.onerror = () => {
+      activeXhr = null;
+      reject(new Error("Network error"));
+    };
+
+    xhr.onabort = () => {
+      activeXhr = null;
+      reject(new Error("cancelled"));
+    };
+
+    const form = new FormData();
+    form.append("file", {
+      uri: item.uri,
+      name: item.filename,
+      type: item.mimeType || "application/octet-stream",
+    } as unknown as Blob);
+
+    xhr.send(form);
+  });
+}
+
 async function runStreamingUpload(item: TransferItem): Promise<void> {
   const startTime = Date.now();
   intentionallyCancelled = false;
 
-  let uploadUri = item.uri;
-  let isTemp = false;
-
-  // Files are picked with copyToCacheDirectory:true, so URIs are file://.
-  // Defensive: if a content:// URI slips through, copy it to a file:// cache
-  // path first — the native uploader cannot read content:// URIs (that left
-  // uploads stuck at 0%).
-  if (isContentUri(item.uri)) {
-    try {
-      const prepared = await copyToCache(item);
-      uploadUri = prepared.uploadUri;
-      isTemp = true;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to prepare file";
-      useTransferStore.getState().updateTransfer(item.id, {
-        status: "failed",
-        error: msg,
-        completedAt: Date.now(),
-      });
-      return;
-    }
-  }
-
   let lastUpdateTime = 0;
   let lastProgress = 0;
 
-  const onProgress = (progress: {
-    totalBytesSent: number;
-    totalBytesExpectedToSend: number;
-  }) => {
+  const onProgress = (sentBytes: number) => {
     const now = Date.now();
-    const sentBytes = progress.totalBytesSent;
-    const expected = progress.totalBytesExpectedToSend;
-    const total = expected > 0 ? expected : item.size;
-    const p = total > 0 ? sentBytes / total : 0;
+    const total = item.size > 0 ? item.size : sentBytes;
+    const p = total > 0 ? Math.min(1, sentBytes / total) : 0;
 
     if (
       now - lastUpdateTime >= PROGRESS_UPDATE_INTERVAL_MS ||
@@ -318,28 +260,12 @@ async function runStreamingUpload(item: TransferItem): Promise<void> {
     }
   };
 
-  const task = createUploadTask(item, uploadUri, onProgress);
-  activeTask = task;
-
   try {
-    const result = await task.uploadAsync();
-    activeTask = null;
+    const body = await uploadViaXhr(item, onProgress);
 
-    if (intentionallyCancelled) {
-      if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
-      return;
-    }
+    if (intentionallyCancelled) return;
 
-    if (!result) {
-      useTransferStore.getState().updateTransfer(item.id, {
-        status: "cancelled",
-        completedAt: Date.now(),
-      });
-      if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
-      return;
-    }
-
-    const json = JSON.parse(result.body) as {
+    const json = JSON.parse(body) as {
       status: string;
       path?: string;
       received?: number;
@@ -359,11 +285,7 @@ async function runStreamingUpload(item: TransferItem): Promise<void> {
       completedAt: Date.now(),
       savedPath: json.path,
     });
-
-    if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
   } catch (err) {
-    activeTask = null;
-    if (isTemp) cleanupTempFile({ ...item, tempUri: uploadUri });
     if (intentionallyCancelled) return;
 
     const msg = err instanceof Error ? err.message : "Upload failed";

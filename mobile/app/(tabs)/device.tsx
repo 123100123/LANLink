@@ -61,8 +61,9 @@ export default function SendScreen() {
     }
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        // file:// URIs so the upload actually streams (content:// hangs at 0%).
-        copyToCacheDirectory: true,
+        // Don't copy into the cache — that blocks the UI on large files. The
+        // uploader streams the content:// URI directly.
+        copyToCacheDirectory: false,
         multiple: true,
       });
       if (result.canceled || result.assets.length === 0) return;
@@ -72,6 +73,7 @@ export default function SendScreen() {
           uri: a.uri,
           name: a.name ?? "unknown file",
           size: a.size ?? 0,
+          mimeType: a.mimeType,
         })),
         agentAddress,
         credentials.authToken,
