@@ -23,7 +23,10 @@ type Transfer struct {
 	Speed       int64  `json:"speed"`
 	Path        string `json:"path,omitempty"`
 	StartedAt   int64  `json:"started_at"`
-	UpdatedAt   int64  `json:"updated_at"`
+	// StartedAtNano is an internal, monotonic-ish start timestamp used only for
+	// stable sub-second speed math; not exposed in the API.
+	StartedAtNano int64 `json:"-"`
+	UpdatedAt     int64 `json:"updated_at"`
 	CompletedAt int64  `json:"completed_at,omitempty"`
 	Error       string `json:"error,omitempty"`
 	Cancellable bool   `json:"cancellable"`
@@ -143,33 +146,52 @@ func AddTransfer(id, filename string, total int64) {
 
 	now := time.Now().Unix()
 	state.Transfers = append(state.Transfers, Transfer{
-		ID:          id,
-		Filename:    filename,
-		Status:      "receiving",
-		Received:    0,
-		Total:       total,
-		StartedAt:   now,
-		UpdatedAt:   now,
-		Cancellable: true,
+		ID:            id,
+		Filename:      filename,
+		Status:        "receiving",
+		Received:      0,
+		Total:         total,
+		StartedAt:     now,
+		StartedAtNano: time.Now().UnixNano(),
+		UpdatedAt:     now,
+		Cancellable:   true,
 	})
+}
+
+// transferElapsedSeconds returns the time since the transfer started, using the
+// nanosecond start stamp for stability and falling back to the second-precision
+// stamp for any transfer created without one. Guarded against clock skew.
+func transferElapsedSeconds(t *Transfer, nowNano int64) float64 {
+	var elapsed float64
+	if t.StartedAtNano > 0 {
+		elapsed = float64(nowNano-t.StartedAtNano) / 1e9
+	} else if t.StartedAt > 0 {
+		elapsed = float64(nowNano/1_000_000_000 - t.StartedAt)
+	}
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	return elapsed
 }
 
 func UpdateTransfer(id string, received int64, speed int64) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	now := time.Now().Unix()
+	nowNano := time.Now().UnixNano()
+	now := nowNano / 1_000_000_000
 	for i := range state.Transfers {
 		if state.Transfers[i].ID == id {
-			state.Transfers[i].Received = received
-			state.Transfers[i].UpdatedAt = now
+			t := &state.Transfers[i]
+			t.Received = received
+			t.UpdatedAt = now
 
 			if speed > 0 {
-				state.Transfers[i].Speed = speed
-			} else if received > 0 && state.Transfers[i].StartedAt > 0 {
-				elapsed := float64(now - state.Transfers[i].StartedAt)
-				if elapsed > 0 {
-					state.Transfers[i].Speed = int64(float64(received) / elapsed)
+				t.Speed = speed
+			} else if received > 0 {
+				elapsed := transferElapsedSeconds(t, nowNano)
+				if elapsed > 0.001 {
+					t.Speed = int64(float64(received) / elapsed)
 				}
 			}
 			return
@@ -181,7 +203,8 @@ func CompleteTransfer(id, path string) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	now := time.Now().Unix()
+	nowNano := time.Now().UnixNano()
+	now := nowNano / 1_000_000_000
 	for i := range state.Transfers {
 		if state.Transfers[i].ID == id {
 			t := &state.Transfers[i]
@@ -195,9 +218,9 @@ func CompleteTransfer(id, path string) {
 				t.Received = t.Total
 			}
 
-			if t.StartedAt > 0 {
-				elapsed := float64(now - t.StartedAt)
-				if elapsed > 0 && t.Received > 0 {
+			if t.Received > 0 {
+				elapsed := transferElapsedSeconds(t, nowNano)
+				if elapsed > 0.001 {
 					t.Speed = int64(float64(t.Received) / elapsed)
 				}
 			}

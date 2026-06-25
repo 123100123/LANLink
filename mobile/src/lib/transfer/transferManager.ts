@@ -237,10 +237,27 @@ async function runStreamingUpload(item: TransferItem): Promise<void> {
 
   let lastUpdateTime = 0;
   let lastProgress = 0;
+  let warnedOverSize = false;
 
-  const onProgress = (sentBytes: number) => {
+  const onProgress = (rawSentBytes: number) => {
     const now = Date.now();
-    const total = item.size > 0 ? item.size : sentBytes;
+    const total = item.size > 0 ? item.size : rawSentBytes;
+
+    // e.loaded counts the whole multipart request body (file + envelope), and a
+    // content:// size from the picker can under-report the real file. Cap the
+    // displayed bytes at the known size so the UI never shows sent > size.
+    const sentBytes = total > 0 ? Math.min(rawSentBytes, total) : rawSentBytes;
+    if (
+      !warnedOverSize &&
+      item.size > 0 &&
+      rawSentBytes > item.size * 1.05
+    ) {
+      warnedOverSize = true;
+      console.warn(
+        `[transfer] uploaded bytes (${rawSentBytes}) exceed reported size (${item.size}) for ${item.filename} — picker size may be wrong`,
+      );
+    }
+
     const p = total > 0 ? Math.min(1, sentBytes / total) : 0;
 
     if (

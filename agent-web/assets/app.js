@@ -331,18 +331,21 @@ function renderTransferItem(t) {
   var status = escapeHtml(t.status);
 
   if (t.status === "receiving") {
-    var pct = t.total > 0 ? ((t.received / t.total) * 100).toFixed(1) : "";
+    // Clamp to 100% and never show received > total — the byte counters can
+    // momentarily run a hair over (multipart envelope / late updates).
+    var pctNum = t.total > 0 ? Math.min(100, (t.received / t.total) * 100) : 0;
+    var pct = t.total > 0 ? pctNum.toFixed(1) : "";
     var percentText = pct ? pct + "%" : "";
     var barHtml = "";
     if (t.total > 0) {
-      var pctNum = parseFloat(pct) || 0;
       barHtml =
         '<div class="progress-track"><div class="progress-fill" style="width:' +
         pctNum +
         '%"></div></div>';
     }
 
-    var details = formatBytes(t.received);
+    var shownReceived = t.total > 0 ? Math.min(t.received, t.total) : t.received;
+    var details = formatBytes(shownReceived);
     if (t.total > 0) details += " / " + formatBytes(t.total);
     if (t.speed > 0) details += " · " + formatSpeed(t.speed);
     var eta = formatETA(t.total, t.received, t.speed);
@@ -466,7 +469,10 @@ function render(state) {
   }
 }
 
+var refreshInFlight = false;
 async function refresh() {
+  if (refreshInFlight) return; // don't pile up if a poll is still pending
+  refreshInFlight = true;
   try {
     var response = await fetch("/ui/state", { cache: "no-store" });
     if (response.ok) {
@@ -475,6 +481,8 @@ async function refresh() {
     }
   } catch (e) {
     // silently retry
+  } finally {
+    refreshInFlight = false;
   }
 }
 
@@ -503,5 +511,6 @@ window.addEventListener("pagehide", function () {
   }
 });
 
-setInterval(refresh, 1000);
+// Poll at 500ms to match the server's 500ms transfer-progress updates.
+setInterval(refresh, 500);
 refresh();

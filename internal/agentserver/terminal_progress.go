@@ -64,6 +64,9 @@ func renderTerminalTransfer(t Transfer) {
 	}
 
 	percent := float64(t.Received) / float64(t.Total) * 100
+	if percent > 100 {
+		percent = 100
+	}
 	bar := progressBar(percent, 20)
 
 	speedStr := ""
