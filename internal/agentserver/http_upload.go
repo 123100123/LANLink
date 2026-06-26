@@ -233,6 +233,9 @@ func transferUploadHandler(w http.ResponseWriter, r *http.Request) {
 		"filename":    safeName,
 		"path":        finalPath,
 		"received":    written,
+		// The receive-throughput speed measured at the last byte. The sender
+		// shows this as its headline speed so it matches the desktop exactly.
+		"speed": finalSpeed,
 	})
 }
 

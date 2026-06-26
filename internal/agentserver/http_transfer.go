@@ -163,6 +163,9 @@ func transferSubresourceHandler(w http.ResponseWriter, r *http.Request) {
 	case "finish":
 		handleHTTPTransferFinish(w, r, transferID)
 
+	case "status":
+		handleHTTPTransferStatus(w, r, transferID)
+
 	default:
 		writeTransferJSON(
 			w,
@@ -384,6 +387,43 @@ func handleHTTPTransferFinish(
 	)
 }
 
+// handleHTTPTransferStatus reports a transfer's authoritative received/total/
+// speed so a sender can mirror the receiver's progress instead of its own send
+// buffer. Works for any transfer the receiver is tracking (streaming uploads
+// included), keyed by the X-Transfer-Id the sender supplied.
+func handleHTTPTransferStatus(
+	w http.ResponseWriter,
+	r *http.Request,
+	transferID string,
+) {
+	if r.Method != http.MethodGet {
+		writeTransferJSON(w, http.StatusMethodNotAllowed, map[string]any{
+			"status": "error",
+			"error":  "method not allowed",
+		})
+		return
+	}
+
+	t, ok := GetTransfer(transferID)
+	if !ok {
+		writeTransferJSON(w, http.StatusNotFound, map[string]any{
+			"status":      "error",
+			"transfer_id": transferID,
+			"error":       "unknown transfer id",
+		})
+		return
+	}
+
+	writeTransferJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"transfer_id": t.ID,
+		"state":       t.Status,
+		"received":    t.Received,
+		"total":       t.Total,
+		"speed":       t.Speed,
+	})
+}
+
 func parseTransferPath(path string) (string, string, int, error) {
 	trimmed := strings.TrimPrefix(path, "/transfers/")
 	parts := strings.Split(strings.Trim(trimmed, "/"), "/")
@@ -395,6 +435,15 @@ func parseTransferPath(path string) (string, string, int, error) {
 		}
 
 		return transferID, "finish", 0, nil
+	}
+
+	if len(parts) == 2 && parts[1] == "status" {
+		transferID, err := url.PathUnescape(parts[0])
+		if err != nil {
+			return "", "", 0, err
+		}
+
+		return transferID, "status", 0, nil
 	}
 
 	if len(parts) == 3 && parts[1] == "chunks" {

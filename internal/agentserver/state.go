@@ -107,6 +107,23 @@ func GetState() State {
 	return s
 }
 
+// GetTransfer returns a snapshot of a single transfer by ID. Senders poll this
+// to display the receiver's authoritative received/total/speed instead of their
+// own OS send-buffer count (which races ahead of real over-the-air delivery).
+func GetTransfer(id string) (Transfer, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	for i := range state.Transfers {
+		if state.Transfers[i].ID == id {
+			t := state.Transfers[i]
+			t.Cancellable = t.Status == "receiving"
+			return t, true
+		}
+	}
+	return Transfer{}, false
+}
+
 func ReserveTransferID(preferredID string, filename string) string {
 	mu.Lock()
 	defer mu.Unlock()
