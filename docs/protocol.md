@@ -5,8 +5,7 @@ The wire formats spoken between clients and a receiver. Go DTOs live in
 `mobile/src/lib/protocol/payloads.ts`.
 
 Two planes: **HTTP** for data + simple control, **WebSocket** for the
-authenticated session. Default port: HTTP/WS `8787`; discovery is mDNS
-(`_lanlink._tcp`).
+authenticated session. Default port: HTTP/WS `8787`.
 
 ## Authentication
 
@@ -31,14 +30,6 @@ Open. Body `{ "device_name": string, "token": string }`. Validates the rotating
 pairing token; on success returns
 `{ "status": "paired", "device_id": string, "auth_token": string }` and rotates
 the token. Errors return `{ "status": "error", "error": string }`.
-
-### Tokenless auto-connect — `POST /pair/auto`
-
-Open, **LAN-facing by design**. Body `{ "device_name": string }` (any token is
-ignored). Issues credentials **without** a pairing token and returns the same
-shape as `/pair`. Used by `lanlink scan` and the mobile network scan. Disable
-beacon advertising with `lanlink receive --no-discovery` if you don't want this
-discoverable. The `/pair` token flow is unaffected.
 
 ### Devices — `GET /devices`
 
@@ -96,7 +87,6 @@ GET  /ui/state                   JSON snapshot (polled ~1/s)
 GET  /ui/qr                      pairing QR PNG
 GET  /ui/fs/list?path=…          list directories (folder browser)
 POST /ui/fs/mkdir                {path, name} — create a folder
-GET  /ui/discovery/scan          discover other receivers (self filtered)
 GET/POST /ui/settings/output-dir[/reset]
 POST /ui/clients/unpair          {device_id}
 POST /ui/transfers/cancel        {transfer_id}
@@ -119,21 +109,6 @@ Flow:
 3. **hello** — debug echo.
 4. **direct_message** — `{type:"direct_message", payload:{text}}` →
    `direct_message.response` (`{status}`).
-
-## Discovery (mDNS / DNS-SD)
-
-Receivers advertise an **`_lanlink._tcp`** service over mDNS (`internal/discovery`,
-via `grandcat/zeroconf`). The instance name is the hostname; the SRV record
-carries the receiver's HTTP port; TXT records carry extra info:
-
-```
-_lanlink._tcp.local   port=8787   TXT: v=0.5.0-dev  open=true
-```
-
-`Scan` browses the service and dedupes by resolved `ip:port`. `open=true` means
-the receiver accepts tokenless `/pair/auto`. The mobile app currently discovers
-by sweeping the `/24` for `GET /health` (an active probe, independent of the
-advertisement); mDNS browsing on mobile is planned alongside the phone receiver.
 
 ## Pairing QR payload
 

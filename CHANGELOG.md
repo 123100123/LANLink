@@ -9,17 +9,17 @@ All notable changes to LANLink are documented here. The format is based on
 First stable release.
 
 ### Desktop
-- Unified pure-Go terminal binary `lanlink` — `receive`, `send`, and `scan`
-  (discover + tokenless auto-connect), with zero dependency on the web UI.
-- Web dashboard build (embeds `agent-web`): live transfers, paired clients,
-  output-folder browser, and network scan, served at `/ui`.
-- LAN discovery via mDNS (`_lanlink._tcp`) with optional tokenless `/pair/auto`
-  for trusted networks; `--no-discovery` to require QR/token pairing.
+- Unified pure-Go terminal binary `lanlink` — `receive` and `send`, with zero
+  dependency on the web UI.
+- Web dashboard build (embeds `agent-web`): live transfers, paired clients, and
+  an output-folder browser, served at `/ui`.
+- Pairing via the receiver's QR code or a manual address + token, with rotating
+  tokens.
 - Cross-compiles to Linux and Windows (amd64/arm64) with no cgo; the Windows
   executables carry the app icon.
 
 ### Mobile (Android / iOS, Expo)
-- QR-code and network-scan pairing, a file upload queue, and live
+- QR-code or address+token pairing, a file upload queue, and live
   progress/speed/ETA that mirror the desktop receiver.
 - **Native Android streaming uploader** (`modules/lanlink-uploader`): streams the
   picked file straight to the receiver from its own OkHttp client, bypassing React
@@ -31,4 +31,4 @@ First stable release.
 - New `GET /transfers/{id}/status` endpoint so senders display the receiver's
   authoritative received-byte count and throughput.
 
-[1.0.0]: https://github.com/123100123/lanlink/releases/tag/v1.0.0
+[1.0.0]: https://github.com/123100123/LANLink/releases/tag/v1.0.0

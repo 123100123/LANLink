@@ -36,6 +36,11 @@ go run ./cmd/lanlink receive      # headless, terminal QR + progress
 go run ./agent                    # then open http://127.0.0.1:8787/ui
 ```
 
+> **Windows receiver:** allow LANLink through Windows Defender Firewall (Private
+> networks) so other devices can connect — click **Allow access** on the prompt,
+> or, as Administrator, run `netsh advfirewall firewall add rule name="LANLink"
+> dir=in action=allow protocol=TCP localport=8787`.
+
 ### Connect and send (desktop → desktop)
 
 Pair with the token the receiver prints, then send:

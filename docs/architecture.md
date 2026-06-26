@@ -32,26 +32,25 @@ dashboard evolve independently.
 ## Package layout
 
 ```
-cmd/lanlink/            Unified terminal binary: subcommand router (receive/send/scan/pair/…).
+cmd/lanlink/            Unified terminal binary: subcommand router (receive/send/pair/…).
                         Imports internal/agentserver + internal/client. No agent-web.
 
 agent/                  Dashboard binary. main.go is a thin wrapper that calls
   main.go               agentserver.Run() with a RegisterRoutes hook for the dashboard.
-  dashboard/            Web layer: HTTP routes for /ui/*, QR image, folder browser,
-                        network scan. Reads core state via internal/agentserver. Embeds agent-web.
+  dashboard/            Web layer: HTTP routes for /ui/*, QR image, and the folder
+                        browser. Reads core state via internal/agentserver. Embeds agent-web.
   ws/                   WebSocket upgrade, auth, session loop, message handlers.
 
 agent-web/              Dashboard frontend (index.html, assets/app.js, assets/styles.css),
                         embedded via go:embed in embed.go. Vanilla HTML/CSS/JS, no build step.
 
 internal/
-  agentserver/          THE PURE-GO RECEIVER CORE. HTTP handlers (pair, pair_auto, devices,
-                        health, http_transfer, http_upload, http_resumable_transfer), the
+  agentserver/          THE PURE-GO RECEIVER CORE. HTTP handlers (pair, devices, health,
+                        http_transfer, http_upload, http_resumable_transfer), the
                         transfer-state registry (state.go), output-folder settings (settings.go),
-                        terminal QR + progress, the discovery beacon, and Run(Options).
+                        terminal QR + progress, and Run(Options).
   client/               Shared client operations used by cmd/lanlink and cli: health, pair,
-                        devices, ping, message, send (commands.go), ws (ws.go), scan + pairAuto (scan.go).
-  discovery/            mDNS Announce + Scan over _lanlink._tcp (pure-Go grandcat/zeroconf).
+                        devices, ping, message, send (commands.go), ws (ws.go).
   transfer/             manager.go = receiver-side chunk writer (used by the core);
                         sender.go = reusable parallel chunked uploader + TerminalProgress().
   auth/ clientconfig/ config/ network/ pairing/ paths/ store/ wsutil/   small shared helpers.
@@ -98,28 +97,12 @@ The **sender** side (desktop) lives in `internal/transfer/sender.go`:
 out chunks across a worker pool, and reports progress through a `ProgressFunc`.
 Both `cmd/lanlink send` and `cli send-file` call it via `internal/client`.
 
-## Discovery and tokenless auto-connect
+## Pairing
 
-`internal/discovery` is pure Go (stdlib only):
-
-- **`Announce(ctx, info, port)`** opens a UDP socket with `SO_BROADCAST` and
-  broadcasts a small JSON `Announcement` (`{service,name,addr,port,v,open}`)
-  every ~2s to the global broadcast address and each interface's directed
-  broadcast. Receivers start this in `agentserver.Run` unless `--no-discovery`.
-- **`Scan(timeout, port)`** binds the discovery port, collects deduped
-  announcements, and returns them.
-- Cross-platform `SO_BROADCAST` is set in `broadcast_unix.go` /
-  `broadcast_windows.go` (build-tagged) using only the standard `syscall` package.
-
-**Tokenless auto-connect**: `POST /pair/auto` (in `agentserver/pair_auto.go`)
-issues credentials without validating a token. It's LAN-facing by design — the
-deliberate trust relaxation that lets `scan` connect with no token. The token +
-QR flow at `/pair` is unchanged, and auto-connected clients appear in the
-dashboard with unpair.
-
-Mobile cannot listen for the UDP beacon in managed Expo without a native module,
-so the mobile app discovers via an **HTTP `/health` subnet sweep**
-(`mobile/src/lib/discovery/sweep.ts`) and then calls `/pair/auto`.
+Pairing is token-based only: a client `POST`s its pairing token to `/pair` (the
+token is shown as a terminal QR code and printed on start), the receiver issues
+credentials, registers the device, and rotates its token. There is no LAN
+discovery or tokenless auto-connect.
 
 ## The web dashboard
 
@@ -127,8 +110,7 @@ so the mobile app discovers via an **HTTP `/health` subnet sweep**
 cleanly into a single binary with no build step. `app.js` polls `/ui/state`
 every second and re-renders. The backend (`agent/dashboard`) exposes JSON routes
 under `/ui/*`, all gated to loopback by `IsLocalRequest` — filesystem browsing
-(`/ui/fs/list`, `/ui/fs/mkdir`) and network scan (`/ui/discovery/scan`) are never
-reachable from the LAN.
+(`/ui/fs/list`, `/ui/fs/mkdir`) is never reachable from the LAN.
 
 ## Mobile
 
@@ -138,10 +120,9 @@ Expo Router app under `mobile/`:
   `transferStore.ts` for the upload queue) + TanStack Query for device lists.
 - **Networking**: `src/lib/api/` (HTTP), `src/lib/socket/lanlinkSocket.ts` (WS),
   `src/lib/protocol/` (Zod-validated envelopes), `src/lib/transfer/` (native
-  streaming upload queue), `src/lib/discovery/sweep.ts` (network scan).
-- **Screens**: `app/pair.tsx` (QR / network-scan / manual), `app/scan.tsx`
-  (subnet sweep + tokenless connect), and the `(tabs)/` device, transfers, and
-  settings screens.
+  streaming upload queue).
+- **Screens**: `app/pair.tsx` (QR / manual) and the `(tabs)/` device, transfers,
+  and settings screens.
 - The TS protocol types in `src/lib/protocol/payloads.ts` mirror the Go
   `protocol/` package.
 
@@ -152,4 +133,5 @@ Expo Router app under `mobile/`:
   must never import `agent-web` (enforce with `go list -deps ./cmd/lanlink`).
 - Keep reusable logic in `internal/`; keep `main` packages thin.
 - Dashboard frontend stays vanilla (no framework/build step).
-- Mobile stays Expo-Go / managed-workflow safe (no custom native modules).
+- Mobile ships a local Expo native module (`modules/lanlink-uploader`) for fast
+  Android uploads; running it needs a dev/EAS build (not Expo Go).

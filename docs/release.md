@@ -127,8 +127,12 @@ After building, sanity-check the artifacts:
 
 ## Notes
 
-- LAN discovery (mDNS `_lanlink._tcp` + tokenless `/pair/auto`) is **on by default**
-  for trusted networks; run `lanlink receive --no-discovery` to require QR/token
-  pairing instead.
+- Pairing is by the receiver's QR code or a manual address + token (no LAN
+  discovery in this release).
+- **Windows receiver:** Windows Defender Firewall blocks inbound connections to a
+  newly-bound port, so peers can't reach a Windows receiver until it's allowed.
+  Click **Allow access** (Private networks) on the firewall prompt, or run as
+  Administrator: `netsh advfirewall firewall add rule name="LANLink" dir=in
+  action=allow protocol=TCP localport=8787`.
 - Desktop dashboard filesystem routes (`/ui/fs/*`) are **loopback-only** and are
   never exposed to LAN clients.
