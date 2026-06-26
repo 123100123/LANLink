@@ -1,13 +1,53 @@
+import * as FileSystem from "expo-file-system/legacy";
+import { Platform } from "react-native";
 import { httpUrl } from "@/lib/api/endpoints";
 import { createId } from "@/lib/protocol/envelope";
 import { useTransferStore, type TransferItem } from "@/store/transferStore";
+import * as NativeUploader from "../../../modules/lanlink-uploader";
 
-const PROGRESS_UPDATE_INTERVAL_MS = 250;
-const PROGRESS_UPDATE_MIN_DELTA = 0.01;
+// How often the phone asks the receiver how many bytes it has actually written.
+const SERVER_POLL_INTERVAL_MS = 400;
 
-let activeXhr: XMLHttpRequest | null = null;
+let activeTask: FileSystem.UploadTask | null = null;
+let activeNativeId: string | null = null;
 let queueLoopRunning = false;
 let intentionallyCancelled = false;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// The receiver's authoritative view of a transfer: how many bytes it has truly
+// written to disk and the throughput it measured. The phone displays these so
+// its speed/bytes/ETA match the desktop instead of its own send-buffer count.
+async function fetchServerProgress(
+  item: TransferItem
+): Promise<{ received: number; total: number; speed: number; state: string } | null> {
+  try {
+    const url = httpUrl(
+      item.agentAddress,
+      `/transfers/${encodeURIComponent(item.id)}/status`
+    );
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${item.authToken}` },
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as {
+      received?: number;
+      total?: number;
+      speed?: number;
+      state?: string;
+    };
+    return {
+      received: j.received ?? 0,
+      total: j.total ?? 0,
+      speed: j.speed ?? 0,
+      state: j.state ?? "",
+    };
+  } catch {
+    return null;
+  }
+}
 
 function getNextWaiting(): TransferItem | undefined {
   return useTransferStore.getState().transfers.find(
@@ -22,11 +62,17 @@ function getActiveUpload(): TransferItem | undefined {
 }
 
 function abortActive(): void {
-  if (activeXhr) {
+  if (activeNativeId) {
     try {
-      activeXhr.abort();
+      NativeUploader.cancelUpload(activeNativeId);
     } catch {}
-    activeXhr = null;
+    activeNativeId = null;
+  }
+  if (activeTask) {
+    try {
+      activeTask.cancelAsync();
+    } catch {}
+    activeTask = null;
   }
 }
 
@@ -168,122 +214,144 @@ function processQueue(): void {
   })();
 }
 
-// Streams the picked file straight to the receiver via FormData. React Native's
-// native networking opens the (content:// or file://) URI and streams it through
-// okhttp without buffering the whole file into memory — so large files upload
-// fast and never freeze the UI on a cache copy.
-function uploadViaXhr(
-  item: TransferItem,
-  onProgress: (sentBytes: number) => void
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    activeXhr = xhr;
+// Whether to use the native Android streaming uploader. It's only present in dev/
+// EAS builds (not Expo Go / iOS / web), so callers fall back to expo-file-system.
+function useNativeUploader(): boolean {
+  return Platform.OS === "android" && NativeUploader.isAvailable;
+}
 
-    xhr.open("POST", httpUrl(item.agentAddress, "/transfers/upload"));
-    xhr.setRequestHeader("Authorization", `Bearer ${item.authToken}`);
-    xhr.setRequestHeader("X-Filename", item.filename);
-    xhr.setRequestHeader("X-Transfer-Id", item.id);
-    if (item.size > 0) {
-      // content:// URIs often report no content-length, so tell the server the
-      // real size for an accurate progress total.
-      xhr.setRequestHeader("X-File-Size", String(item.size));
-    }
+// PRIMARY (Android): stream the file straight to the receiver from a native OkHttp
+// client (the local lanlink-uploader module). This bypasses React Native's
+// NetworkingModule, whose ProgressRequestBody wraps EVERY upload body in a
+// FilterOutputStream that writes ONE BYTE AT A TIME with a per-byte progress check
+// — throttling fetch/XHR/FormData AND expo-file-system uploads to ~1/7th of link
+// speed (measured 6 MB/s vs ~25-42 MB/s for native curl on the same link). The
+// native module streams the URI directly (no cache copy) at link speed.
+async function uploadViaNative(item: TransferItem): Promise<string> {
+  activeNativeId = item.id;
+  try {
+    const result = await NativeUploader.uploadFile({
+      url: httpUrl(item.agentAddress, "/transfers/upload"),
+      uri: item.uri,
+      filename: item.filename,
+      transferId: item.id,
+      authToken: item.authToken,
+      size: item.size > 0 ? item.size : undefined,
+      mimeType: item.mimeType,
+    });
+    activeNativeId = null;
 
-    xhr.upload.onprogress = (e) => {
-      // e.total is unreliable for content:// (can be 0); progress is computed
-      // against item.size in the caller.
-      onProgress(e.loaded);
-    };
-
-    xhr.onload = () => {
-      activeXhr = null;
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(xhr.responseText);
-        return;
-      }
-      let msg = `Upload failed (${xhr.status})`;
+    if (result.status < 200 || result.status >= 300) {
+      let msg = `Upload failed (${result.status})`;
       try {
-        const j = JSON.parse(xhr.responseText) as { error?: string };
+        const j = JSON.parse(result.body) as { error?: string };
         if (j.error) msg = j.error;
       } catch {}
-      reject(new Error(msg));
-    };
+      throw new Error(msg);
+    }
+    return result.body;
+  } catch (err) {
+    activeNativeId = null;
+    throw err;
+  }
+}
 
-    xhr.onerror = () => {
-      activeXhr = null;
-      reject(new Error("Network error"));
-    };
+// FALLBACK (iOS / Expo Go / native module unavailable): upload via expo-file-system's
+// own OkHttp client (BINARY_CONTENT raw body). Also avoids RN's per-byte path, but
+// the native module above is preferred on Android. The Go receiver accepts a raw
+// body either way, so no server change is needed. Progress is polled from the
+// receiver in runStreamingUpload, so we pass no progress callback here.
+async function uploadViaFileSystem(item: TransferItem): Promise<string> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${item.authToken}`,
+    "X-Filename": item.filename,
+    "X-Transfer-Id": item.id,
+  };
+  if (item.size > 0) {
+    headers["X-File-Size"] = String(item.size);
+  }
 
-    xhr.onabort = () => {
-      activeXhr = null;
-      reject(new Error("cancelled"));
-    };
+  const task = FileSystem.createUploadTask(
+    httpUrl(item.agentAddress, "/transfers/upload"),
+    item.uri,
+    {
+      httpMethod: "POST",
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      headers,
+    }
+  );
+  activeTask = task;
 
-    const form = new FormData();
-    form.append("file", {
-      uri: item.uri,
-      name: item.filename,
-      type: item.mimeType || "application/octet-stream",
-    } as unknown as Blob);
+  const result = await task.uploadAsync();
+  activeTask = null;
 
-    xhr.send(form);
-  });
+  // A cancelled task resolves without a result.
+  if (!result) {
+    throw new Error("cancelled");
+  }
+
+  if (result.status < 200 || result.status >= 300) {
+    let msg = `Upload failed (${result.status})`;
+    try {
+      const j = JSON.parse(result.body) as { error?: string };
+      if (j.error) msg = j.error;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  return result.body;
+}
+
+// Picks the fastest available uploader for this platform/build.
+function performUpload(item: TransferItem): Promise<string> {
+  return useNativeUploader() ? uploadViaNative(item) : uploadViaFileSystem(item);
 }
 
 async function runStreamingUpload(item: TransferItem): Promise<void> {
   const startTime = Date.now();
   intentionallyCancelled = false;
 
-  let lastUpdateTime = 0;
-  let lastProgress = 0;
-  let warnedOverSize = false;
+  // Benchmark logging: compare the native uploader vs expo-file-system on the same
+  // link (URI scheme, size, duration, avg MB/s, response status are logged below).
+  const uriScheme = item.uri.split(":")[0] || "unknown";
+  const mechanism = useNativeUploader() ? "native" : "expo-fs";
+  console.log(
+    `[upload] start id=${item.id} file="${item.filename}" scheme=${uriScheme} ` +
+      `size=${item.size} via=${mechanism}`
+  );
 
-  const onProgress = (rawSentBytes: number) => {
-    const now = Date.now();
-    const total = item.size > 0 ? item.size : rawSentBytes;
+  // The phone can't measure real upload progress itself (and adding a native
+  // progress callback re-introduces per-chunk request-body wrapping). So the
+  // receiver is the source of truth — poll it for the real received-byte count and
+  // throughput, and display those. This makes the phone's speed / bytes / ETA
+  // match the desktop exactly.
+  let polling = true;
 
-    // e.loaded counts the whole multipart request body (file + envelope), and a
-    // content:// size from the picker can under-report the real file. Cap the
-    // displayed bytes at the known size so the UI never shows sent > size.
-    const sentBytes = total > 0 ? Math.min(rawSentBytes, total) : rawSentBytes;
-    if (
-      !warnedOverSize &&
-      item.size > 0 &&
-      rawSentBytes > item.size * 1.05
-    ) {
-      warnedOverSize = true;
-      console.warn(
-        `[transfer] uploaded bytes (${rawSentBytes}) exceed reported size (${item.size}) for ${item.filename} — picker size may be wrong`,
-      );
-    }
-
-    // e.loaded reaches total when the bytes are handed to the OS send buffer —
-    // which races ahead of what the receiver has actually gotten over the air
-    // (deep buffers on a phone-hotspot link). Hold the live bar just under 100%
-    // so "done" means server-confirmed (set in the onload branch below), and the
-    // bar doesn't claim completion while bytes are still in flight.
-    const p = total > 0 ? Math.min(0.99, sentBytes / total) : 0;
-
-    if (
-      now - lastUpdateTime >= PROGRESS_UPDATE_INTERVAL_MS ||
-      Math.abs(p - lastProgress) >= PROGRESS_UPDATE_MIN_DELTA
-    ) {
-      const elapsed = (now - startTime) / 1000;
-      useTransferStore.getState().updateTransfer(item.id, {
-        sentBytes,
-        size: total,
-        progress: p,
-        speed: elapsed > 0 ? sentBytes / elapsed : 0,
-        elapsed,
-      });
-      lastUpdateTime = now;
-      lastProgress = p;
+  const pollLoop = async () => {
+    while (polling) {
+      await delay(SERVER_POLL_INTERVAL_MS);
+      if (!polling) break;
+      const prog = await fetchServerProgress(item);
+      if (!polling || !prog) continue;
+      if (prog.received > 0 || prog.total > 0) {
+        const total = prog.total > 0 ? prog.total : item.size;
+        useTransferStore.getState().updateTransfer(item.id, {
+          sentBytes: prog.received,
+          size: total > 0 ? total : item.size,
+          // Hold just under 100% mid-transfer; completion is set on the server's
+          // confirmed save in the onload branch below.
+          progress: total > 0 ? Math.min(0.99, prog.received / total) : 0,
+          speed: prog.speed,
+          elapsed: (Date.now() - startTime) / 1000,
+        });
+      }
     }
   };
+  void pollLoop();
 
   try {
-    const body = await uploadViaXhr(item, onProgress);
+    const body = await performUpload(item);
+    polling = false;
 
     if (intentionallyCancelled) return;
 
@@ -291,6 +359,7 @@ async function runStreamingUpload(item: TransferItem): Promise<void> {
       status: string;
       path?: string;
       received?: number;
+      speed?: number;
       error?: string;
     };
 
@@ -298,21 +367,40 @@ async function runStreamingUpload(item: TransferItem): Promise<void> {
       throw new Error(json.error || "Upload failed");
     }
 
-    // Headline speed = true end-to-end rate: the file size over the wall time
-    // from start to the server's confirmed save. This absorbs the send-buffer
-    // head start and the over-the-air drain, so it matches the desktop's number
-    // instead of the inflated "bytes buffered / time" mid-transfer rate.
+    // Final numbers come straight from the receiver: the bytes it actually wrote
+    // and the throughput it measured at the last byte. Falling back to local
+    // wall-time math only if the server omitted them.
     const endElapsed = (Date.now() - startTime) / 1000;
+    const finalReceived =
+      typeof json.received === "number" && json.received > 0
+        ? json.received
+        : item.size;
+    const finalSpeed =
+      typeof json.speed === "number" && json.speed > 0
+        ? json.speed
+        : endElapsed > 0
+          ? finalReceived / endElapsed
+          : 0;
+    console.log(
+      `[upload] done id=${item.id} via=${mechanism} bytes=${finalReceived} ` +
+        `dur=${endElapsed.toFixed(2)}s avg=${(
+          finalReceived /
+          1e6 /
+          Math.max(endElapsed, 0.001)
+        ).toFixed(1)}MB/s status=${json.status}`
+    );
     useTransferStore.getState().updateTransfer(item.id, {
       status: "completed",
       progress: 1,
-      sentBytes: item.size,
-      speed: endElapsed > 0 ? item.size / endElapsed : 0,
+      sentBytes: finalReceived,
+      size: item.size > 0 ? item.size : finalReceived,
+      speed: finalSpeed,
       elapsed: endElapsed,
       completedAt: Date.now(),
       savedPath: json.path,
     });
   } catch (err) {
+    polling = false;
     if (intentionallyCancelled) return;
 
     const msg = err instanceof Error ? err.message : "Upload failed";
@@ -321,5 +409,7 @@ async function runStreamingUpload(item: TransferItem): Promise<void> {
       error: msg,
       completedAt: Date.now(),
     });
+  } finally {
+    polling = false;
   }
 }
