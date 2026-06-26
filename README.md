@@ -11,21 +11,19 @@ mobile hotspot — no cloud, no accounts.
 
 | Component | What it is |
 |-----------|------------|
-| **`lanlink`** | The unified, **pure-Go terminal binary**. Runs a receiver (`lanlink receive`), sends files (`lanlink send`), and discovers/auto-connects to receivers (`lanlink scan`). Has **zero dependency on the web UI or mobile app**. |
+| **`lanlink`** | The unified, **pure-Go terminal binary**. Runs a receiver (`lanlink receive`) and sends files (`lanlink send`). Has **zero dependency on the web UI or mobile app**. |
 | **dashboard build** (`./agent` → `lanlink-<os>-<arch>`) | The same receiver **plus the browser dashboard** at `/ui`. The only build that embeds `agent-web`. |
 | **legacy CLI** (`./cli`) | The original terminal client, preserved for reference; superseded by `lanlink` above. |
-| **Mobile app** (`mobile/`) | Expo / React Native app for Android & iOS: QR + network-scan pairing, file upload queue with progress/speed/ETA. |
+| **Mobile app** (`mobile/`) | Expo / React Native app for Android & iOS: QR or address+token pairing, file upload queue with progress/speed/ETA. |
 
 The desktop core is intentionally a **pure-Go terminal application**; the web
 dashboard and the mobile app are optional UI layers on top of it.
 
 ## Features
 
-- Device pairing with rotating tokens, or **tokenless auto-connect** on trusted LANs
-- **LAN discovery**: receivers advertise via mDNS (`_lanlink._tcp`); `lanlink scan` (desktop) and a
-  network-scan screen (mobile) find them and connect with no token
+- Device pairing with rotating tokens via the receiver's QR code or a manual address + token
 - Parallel chunked uploads (CLI), native streaming uploads (mobile), resumable uploads
-- A polished **web dashboard**: live transfers, paired clients, output-folder browser, network scan
+- A polished **web dashboard**: live transfers, paired clients, output-folder browser
 - Pure-Go, cross-compiles to Linux / Windows / arm64 with no cgo
 
 ## Quick start
@@ -40,21 +38,17 @@ go run ./agent                    # then open http://127.0.0.1:8787/ui
 
 ### Connect and send (desktop → desktop)
 
-```bash
-go run ./cmd/lanlink scan                         # discover + auto-connect (no token)
-go run ./cmd/lanlink send 192.168.1.42:8787 ./big.zip
-```
-
-Or pair explicitly with a token shown by the receiver:
+Pair with the token the receiver prints, then send:
 
 ```bash
 go run ./cmd/lanlink pair 192.168.1.42:8787 123456
+go run ./cmd/lanlink send 192.168.1.42:8787 ./big.zip
 ```
 
 ### Mobile
 
 1. `cd mobile && npm install && npx expo start`
-2. In the app: **Scan agent QR code**, **Scan network** (tokenless), or enter the address + token.
+2. In the app: **scan the agent's QR code**, or enter the address + token.
 3. Send files from the Device tab; watch progress in the Transfers tab.
 
 ## Build
@@ -86,17 +80,15 @@ See [`docs/release.md`](docs/release.md) for Windows executables and the Android
 
 ## Security note
 
-`lanlink scan` / mobile "Scan network" use an **open, tokenless** endpoint
-(`POST /pair/auto`) so any device on the local network can connect without a
-token. This is a deliberate convenience for **trusted LANs**. To require tokens,
-run the receiver with `lanlink receive --no-discovery` (disables mDNS
-advertising) and pair via QR/token only. Dashboard filesystem and scan routes
-(`/ui/fs/*`, `/ui/discovery/scan`) are **loopback-only** and never exposed to the LAN.
+Pairing always requires the receiver's token (shown as a QR code or printed on
+start), so only devices you explicitly pair can connect, and the receiver rotates
+its token after each successful pairing. Dashboard filesystem routes (`/ui/fs/*`)
+are **loopback-only** and never exposed to LAN clients.
 
 ## Documentation
 
 - [`docs/architecture.md`](docs/architecture.md) — how the system is built (packages, data flow, the pure-Go core / UI split)
-- [`docs/protocol.md`](docs/protocol.md) — the HTTP, WebSocket, and discovery wire protocol
+- [`docs/protocol.md`](docs/protocol.md) — the HTTP and WebSocket wire protocol
 - [`docs/development.md`](docs/development.md) — building, running, and testing each component
 - [`docs/release.md`](docs/release.md) — producing desktop executables and the Android APK
 

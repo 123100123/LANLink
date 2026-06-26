@@ -1,8 +1,8 @@
 # LANLink Mobile
 
 The LANLink mobile client — an [Expo](https://expo.dev/) / React Native app for
-Android and iOS. Pair with a desktop receiver by QR code, network scan, or
-address + token, then send files over the LAN with live progress.
+Android and iOS. Pair with a desktop receiver by QR code or address + token,
+then send files over the LAN with live progress.
 
 ## Requirements
 
