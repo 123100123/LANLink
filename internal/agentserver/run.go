@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	ws "github.com/123100123/lanlink/agent/ws"
@@ -102,6 +103,16 @@ func Run(opts Options) error {
 		for _, ip := range ips {
 			log.Println(ip + ":" + cfg.Port)
 		}
+		log.Println("")
+	}
+
+	// On Windows, inbound connections to a freshly-bound port are blocked by
+	// Windows Defender Firewall by default, so peers can't reach the receiver
+	// until it's allowed. Surface the fix instead of letting pairing silently hang.
+	if runtime.GOOS == "windows" {
+		log.Println("Windows: if other devices can't reach this receiver, allow LANLink")
+		log.Println("through Windows Defender Firewall (Private networks). As Administrator:")
+		log.Printf("  netsh advfirewall firewall add rule name=\"LANLink\" dir=in action=allow protocol=TCP localport=%s", cfg.Port)
 		log.Println("")
 	}
 
