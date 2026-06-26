@@ -125,8 +125,10 @@ After building, sanity-check the artifacts:
 - `lanlink.apk` (from EAS)
 - (optional) `lanlink-linux-arm64`, `lanlink-windows-arm64.exe`, plus their `lanlink-cmd-…` variants
 
-## Known limitations
+## Notes
 
-- Pairing is by QR or manual address + token (no LAN auto-discovery in this build).
+- LAN discovery (mDNS `_lanlink._tcp` + tokenless `/pair/auto`) is **on by default**
+  for trusted networks; run `lanlink receive --no-discovery` to require QR/token
+  pairing instead.
 - Desktop dashboard filesystem routes (`/ui/fs/*`) are **loopback-only** and are
   never exposed to LAN clients.

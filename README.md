@@ -12,8 +12,8 @@ mobile hotspot — no cloud, no accounts.
 | Component | What it is |
 |-----------|------------|
 | **`lanlink`** | The unified, **pure-Go terminal binary**. Runs a receiver (`lanlink receive`), sends files (`lanlink send`), and discovers/auto-connects to receivers (`lanlink scan`). Has **zero dependency on the web UI or mobile app**. |
-| **`lanlink-agent`** (`./agent`) | The same receiver **plus the browser dashboard** at `/ui`. The only build that embeds `agent-web`. |
-| **`lanlink` CLI** (`./cli`) | The original terminal client, preserved; a thin wrapper over the shared client library. |
+| **dashboard build** (`./agent` → `lanlink-<os>-<arch>`) | The same receiver **plus the browser dashboard** at `/ui`. The only build that embeds `agent-web`. |
+| **legacy CLI** (`./cli`) | The original terminal client, preserved for reference; superseded by `lanlink` above. |
 | **Mobile app** (`mobile/`) | Expo / React Native app for Android & iOS: QR + network-scan pairing, file upload queue with progress/speed/ETA. |
 
 The desktop core is intentionally a **pure-Go terminal application**; the web
@@ -67,7 +67,7 @@ go build -o bin/agent   ./agent         # dashboard build
 Cross-platform release binaries (Linux + Windows, pure Go):
 
 ```bash
-scripts/build-release.sh                # → release/lanlink-* and lanlink-agent-*
+scripts/build-release.sh                # → release/lanlink-<os>-<arch> (dashboard) + lanlink-cmd-<os>-<arch> (terminal)
 ```
 
 See [`docs/release.md`](docs/release.md) for Windows executables and the Android APK / EAS path.
@@ -99,8 +99,7 @@ advertising) and pair via QR/token only. Dashboard filesystem and scan routes
 - [`docs/protocol.md`](docs/protocol.md) — the HTTP, WebSocket, and discovery wire protocol
 - [`docs/development.md`](docs/development.md) — building, running, and testing each component
 - [`docs/release.md`](docs/release.md) — producing desktop executables and the Android APK
-- [`docs/plan.md`](docs/plan.md) — the prototype-to-release implementation plan
 
 ## Version
 
-`v0.5.0-dev` · MIT License
+`v1.0.0` · MIT License
