@@ -23,6 +23,11 @@ data/
 bin/
 build/
 dist/
+release/
+
+# Expo prebuild native projects (continuous native generation)
+mobile/android/
+mobile/ios/
 
 *.exe
 *.exe~

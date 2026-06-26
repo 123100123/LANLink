@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LANLink Agent</title>
+  <link rel="icon" type="image/png" href="/ui/assets/favicon.png">
+  <link rel="stylesheet" href="/ui/assets/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="brand">
+        <img class="brand-mark" src="/ui/assets/logo.png" alt="LANLink logo">
+        <div class="brand-text">
+          <h1>LANLink</h1>
+          <span class="brand-sub">Agent dashboard</span>
+        </div>
+      </div>
+      <span class="badge" id="status-badge">
+        <span class="badge-dot"></span><span id="status-badge-text">Starting…</span>
+      </span>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Pair device</h2>
+        <div class="qr-container">
+          <img id="pairing-qr" src="/ui/qr" alt="Pairing QR Code">
+        </div>
+        <div class="info-row">
+          <span class="info-label">Address</span>
+          <span class="info-value" id="address">—</span>
+          <button class="btn btn-ghost btn-sm" onclick="copyText('address')">Copy</button>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Token</span>
+          <span class="info-value mono" id="token">—</span>
+          <button class="btn btn-ghost btn-sm" onclick="copyText('token')">Copy</button>
+        </div>
+        <p class="hint">Scan this QR code from the LANLink mobile app to pair.</p>
+      </section>
+
+      <section class="card">
+        <h2>Agent status</h2>
+        <div class="stat-grid">
+          <div class="stat">
+            <span class="stat-value" id="files-received">0</span>
+            <span class="stat-label">Files received</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="active-transfers">0</span>
+            <span class="stat-label">Active transfers</span>
+          </div>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Status</span>
+          <span class="info-value" id="agent-status">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Uptime</span>
+          <span class="info-value" id="uptime">—</span>
+        </div>
+
+        <div class="paired-clients-section">
+          <h3>Paired this run</h3>
+          <div id="paired-clients-list" class="paired-clients-list">
+            <p class="empty">No clients paired this run</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card full-width">
+      <h2>Output folder</h2>
+      <div class="info-row">
+        <span class="info-label">Current</span>
+        <span class="info-value mono" id="output-dir">—</span>
+      </div>
+      <div class="settings-form">
+        <div class="settings-input-row">
+          <input type="text" id="output-dir-input" class="settings-input" placeholder="/home/user/Downloads/LANLink">
+          <button class="btn btn-ghost" onclick="openBrowser()">Browse…</button>
+        </div>
+        <div class="settings-actions">
+          <button class="btn btn-primary" onclick="saveOutputDir()">Save</button>
+          <button class="btn btn-ghost" onclick="resetOutputDir()">Reset to default</button>
+          <span class="settings-status" id="settings-status"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card full-width">
+      <h2>Active transfers</h2>
+      <div id="active-list" class="transfer-list">
+        <p class="empty">No active transfers</p>
+      </div>
+    </section>
+
+    <section class="card full-width">
+      <h2>Received this run</h2>
+      <div id="received-list" class="transfer-list">
+        <p class="empty">No files received yet</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- Folder browser modal -->
+  <div class="modal-overlay" id="browser-overlay" onclick="onBrowserOverlayClick(event)">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Choose output folder">
+      <div class="modal-header">
+        <h2>Choose a folder</h2>
+        <button class="icon-btn" title="Close" onclick="closeBrowser()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="browser-quick" id="browser-quick"></div>
+        <div class="browser-pathbar">
+          <button class="btn btn-ghost btn-sm" id="browser-up" onclick="browserUp()" title="Parent folder">↑ Up</button>
+          <span class="browser-path mono" id="browser-path" title="">—</span>
+        </div>
+        <div class="browser-list" id="browser-list">
+          <p class="empty">Loading…</p>
+        </div>
+        <div class="browser-newfolder">
+          <input type="text" id="browser-newfolder-input" class="settings-input" placeholder="New folder name">
+          <button class="btn btn-ghost" onclick="createFolder()">Create folder</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="browser-selected mono" id="browser-selected"></span>
+        <div class="modal-footer-actions">
+          <button class="btn btn-ghost" onclick="closeBrowser()">Cancel</button>
+          <button class="btn btn-primary" onclick="useThisFolder()">Use this folder</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/ui/assets/app.js" defer></script>
+</body>
+</html>

@@ -27,14 +27,21 @@ type ActiveTransfer struct {
 	mu sync.Mutex
 }
 
+type OutputDirProvider func() string
+
 type Manager struct {
 	mu        sync.Mutex
 	transfers map[string]*ActiveTransfer
+	getDir    OutputDirProvider
 }
 
-func NewManager() *Manager {
+func NewManager(getDir OutputDirProvider) *Manager {
+	if getDir == nil {
+		getDir = func() string { return "received" }
+	}
 	return &Manager{
 		transfers: make(map[string]*ActiveTransfer),
+		getDir:    getDir,
 	}
 }
 
@@ -51,17 +58,19 @@ func (m *Manager) Start(
 	}
 
 	safeName := filepath.Base(filename)
+	outputDir := m.getDir()
 
-	if err := os.MkdirAll("received/tmp", 0755); err != nil {
+	tmpDir := filepath.Join(outputDir, "tmp")
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return nil, err
 	}
 
-	if err := os.MkdirAll("received", 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, err
 	}
 
-	finalPath := uniquePath("received", safeName)
-	tempPath := filepath.Join("received", "tmp", transferID+"_"+safeName)
+	finalPath := uniquePath(outputDir, safeName)
+	tempPath := filepath.Join(tmpDir, transferID+"_"+safeName)
 
 	file, err := os.OpenFile(
 		tempPath,
@@ -168,6 +177,13 @@ func (t *ActiveTransfer) WriteChunk(
 
 	t.Chunks[index] = struct{}{}
 	t.ReceivedBytes += int64(n)
+
+	// Defensive: never let the running total exceed the declared size, so no
+	// caller can ever display received > size (e.g. if overlapping offsets from
+	// distinct indices were ever submitted).
+	if t.Size >= 0 && t.ReceivedBytes > t.Size {
+		t.ReceivedBytes = t.Size
+	}
 
 	return t.ReceivedBytes, nil
 }

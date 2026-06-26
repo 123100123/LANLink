@@ -2,74 +2,30 @@ package main
 
 import (
 	"log"
-	"net/http"
+	"time"
 
-	ws "github.com/123100123/lanlink/agent/ws"
-	"github.com/123100123/lanlink/internal/config"
-	"github.com/123100123/lanlink/internal/network"
-	"github.com/123100123/lanlink/internal/pairing"
+	"github.com/123100123/lanlink/agent/dashboard"
+	"github.com/123100123/lanlink/internal/agentserver"
 )
 
-const pairingTokenLength = 6
-
-func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Filename, X-Transfer-Id")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next(w, r)
-	}
-}
-
+// The agent binary is the dashboard build of LANLink: it runs the pure-Go
+// receiver core (internal/agentserver) and layers the web dashboard
+// (agent/dashboard + agent-web) on top. The pure terminal binary cmd/lanlink
+// runs the same core without importing any UI package.
 func main() {
-	cfg := config.Load()
-
-	var err error
-
-	pairingManager, err = pairing.NewManager(pairingTokenLength)
-	if err != nil {
-		log.Fatal("failed to generate pairing token:", err)
-	}
-
-	http.HandleFunc("/health", corsMiddleware(healthHandler))
-	http.HandleFunc("/pair", corsMiddleware(pairHandler))
-	http.HandleFunc("/devices", corsMiddleware(devicesHandler))
-	http.HandleFunc("/ws", corsMiddleware(ws.Handler))
-
-	http.HandleFunc("/transfers/start", corsMiddleware(transferStartHandler))
-	http.HandleFunc("/transfers/upload", corsMiddleware(transferUploadHandler))
-	http.HandleFunc("/transfers/resumable/start", corsMiddleware(resumableStartHandler))
-	http.HandleFunc("/transfers/resumable/", corsMiddleware(resumableSubresourceHandler))
-	http.HandleFunc("/transfers/", corsMiddleware(transferSubresourceHandler))
-
-	address := ":" + cfg.Port
-
-	log.Println("LANLink agent listening on", address)
-
-	ips, err := network.GetLocalIPs()
-	if err == nil {
-		log.Println("\nAvailable addresses:")
-		log.Println("127.0.0.1:" + cfg.Port)
-		for _, ip := range ips {
-			log.Println(ip + ":" + cfg.Port)
-		}
-		log.Println("")
-	}
-
-	log.Println("Pairing token:", pairingManager.Token())
-	log.Println("Use this token to pair a new device.")
-	log.Println("A new token will be generated after each successful pairing.")
-	log.Println("")
-
-	printPairingQR(pairingManager.Token(), cfg.Port)
-
-	err = http.ListenAndServe(address, nil)
+	err := agentserver.Run(agentserver.Options{
+		RegisterRoutes: dashboard.RegisterRoutes,
+		OnListening: func(port string) {
+			log.Println("Dashboard: http://127.0.0.1:" + port + "/ui")
+			log.Println("")
+			if dashboard.ShouldOpenDashboard() {
+				go func() {
+					time.Sleep(300 * time.Millisecond)
+					dashboard.OpenDashboard(port)
+				}()
+			}
+		},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

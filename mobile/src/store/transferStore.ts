@@ -10,8 +10,8 @@ export type TransferStatus =
 export type TransferItem = {
   id: string;
   uri: string;
-  tempUri?: string;
   filename: string;
+  mimeType?: string;
   size: number;
   agentAddress: string;
   authToken: string;

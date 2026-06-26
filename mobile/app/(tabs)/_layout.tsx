@@ -24,10 +24,10 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="device"
         options={{
-          title: "Device",
+          title: "Send",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name={focused ? "phone-portrait" : "phone-portrait-outline"}
+              name={focused ? "paper-plane" : "paper-plane-outline"}
               color={color}
               size={size}
             />

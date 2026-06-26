@@ -1,10 +1,14 @@
+// Command cli is the original LANLink terminal client, preserved for
+// compatibility. It is now a thin wrapper over the shared internal/client and
+// internal/agentserver packages; the unified cmd/lanlink binary is preferred.
 package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
-	cliws "github.com/123100123/lanlink/cli/ws"
+	"github.com/123100123/lanlink/internal/client"
 )
 
 func main() {
@@ -13,81 +17,51 @@ func main() {
 		return
 	}
 
-	command := os.Args[1]
-
-	switch command {
+	switch os.Args[1] {
 	case "health":
-		if len(os.Args) < 3 {
-			printUsage()
-			return
-		}
-
-		address := os.Args[2]
-		checkHealth(address)
+		requireArgs(3)
+		fail(client.Health(os.Args[2]))
 
 	case "pair":
-		if len(os.Args) < 4 {
-			printUsage()
-			return
-		}
-
-		address := os.Args[2]
-		token := os.Args[3]
-
-		pair(address, token)
+		requireArgs(4)
+		fail(client.Pair(os.Args[2], os.Args[3], "lanlink-cli"))
 
 	case "devices":
-		if len(os.Args) < 3 {
-			printUsage()
-			return
-		}
-
-		address := os.Args[2]
-		listDevices(address)
+		requireArgs(3)
+		fail(client.Devices(os.Args[2]))
 
 	case "ws":
-		if len(os.Args) < 3 {
-			printUsage()
-			return
-		}
-
-		address := os.Args[2]
-		cliws.Connect(address)
+		requireArgs(3)
+		fail(client.WSHello(os.Args[2]))
 
 	case "ping":
-		if len(os.Args) < 3 {
-			printUsage()
-			return
-		}
-
-		address := os.Args[2]
-		Run(address)
+		requireArgs(3)
+		fail(client.Ping(os.Args[2]))
 
 	case "message":
-		if len(os.Args) < 4 {
-			printUsage()
-			return
-		}
-
-		address := os.Args[2]
-		messageParts := os.Args[3:]
-
-		cliws.SendDirectMessage(address, messageParts)
+		requireArgs(4)
+		fail(client.Message(os.Args[2], os.Args[3:]))
 
 	case "send-file":
-		if len(os.Args) < 4 {
-			printUsage()
-			return
-		}
-
-		address := os.Args[2]
-		filePath := os.Args[3]
-
-		sendFile(address, filePath)
+		requireArgs(4)
+		fail(client.SendFile(os.Args[2], os.Args[3]))
 
 	default:
-		fmt.Println("Unknown command:", command)
+		fmt.Println("Unknown command:", os.Args[1])
 		printUsage()
+	}
+}
+
+func requireArgs(n int) {
+	if len(os.Args) < n {
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func fail(err error) {
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
@@ -100,13 +74,4 @@ func printUsage() {
 	fmt.Println("  go run ./cli ping <host:port>")
 	fmt.Println("  go run ./cli message <host:port> <text>")
 	fmt.Println("  go run ./cli send-file <host:port> <file>")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  go run ./cli health localhost:8787")
-	fmt.Println("  go run ./cli pair localhost:8787 123456")
-	fmt.Println("  go run ./cli devices localhost:8787")
-	fmt.Println("  go run ./cli ws localhost:8787")
-	fmt.Println("  go run ./cli ping localhost:8787")
-	fmt.Println(`  go run ./cli message localhost:8787 "hello from termux"`)
-	fmt.Println("  go run ./cli send-file localhost:8787 test.txt")
 }

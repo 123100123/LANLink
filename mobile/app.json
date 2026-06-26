@@ -3,13 +3,56 @@
     "name": "LANLink",
     "slug": "lanlink-mobile",
     "scheme": "lanlink",
-    "version": "0.1.0",
+    "version": "0.5.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
-    "platforms": ["android", "ios", "web"],
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b1220",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0b1220"
+    },
+    "platforms": [
+      "android",
+      "ios",
+      "web"
+    ],
+    "android": {
+      "package": "com.lanlink.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4f7cff"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.lanlink.app",
+      "supportsTablet": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": ["**/*"]
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2ec7427c-8bcb-4218-931f-13cc9491a9a6"
+      }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ]
   }
 }

@@ -1,0 +1,22 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.lanlinkuploader'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.lanlinkuploader"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  // Match the okhttp/okio versions expo-file-system already pulls into this app
+  // so there's a single resolved version on the classpath.
+  implementation 'com.squareup.okhttp3:okhttp:4.9.2'
+  implementation 'com.squareup.okio:okio:2.9.0'
+}

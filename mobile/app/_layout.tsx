@@ -1,48 +1,71 @@
 import { Stack } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { useEffect, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ScrollView, StyleSheet, Text } from "react-native";
 
 import { useSessionStore } from "@/store/sessionStore";
 
 const queryClient = new QueryClient();
 
-function ErrorBoundary({ error }: { error: Error }) {
+function ErrorView({ title, error }: { title: string; error: Error }) {
   return (
-    <View style={styles.errorContainer}>
-      <Text style={styles.errorTitle}>⚠️ Error Loading App</Text>
+    <ScrollView contentContainerStyle={styles.errorContainer}>
+      <Text style={styles.errorTitle}>{title}</Text>
       <Text style={styles.errorText}>{error.message}</Text>
       <Text style={styles.errorStack}>{error.stack}</Text>
-    </View>
+    </ScrollView>
   );
 }
 
+// Real React error boundary: catches render/runtime errors in any screen and
+// shows them, instead of leaving a blank screen (which is what happens in a
+// release build when an uncaught error escapes rendering).
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[App] Render error:", error, info?.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return <ErrorView title="⚠️ App error" error={this.state.error} />;
+    }
+    return this.props.children;
+  }
+}
+
 export default function RootLayout() {
-  const [error, setError] = useState<Error | null>(null);
+  const [hydrateError, setHydrateError] = useState<Error | null>(null);
   const hydrate = useSessionStore((state) => state.hydrate);
 
   useEffect(() => {
-    console.log("[App] Starting hydrate...");
-    hydrate()
-      .then(() => {
-        console.log("[App] Hydrate complete");
-      })
-      .catch((err) => {
-        console.error("[App] Hydrate failed:", err);
-        setError(err);
-        useSessionStore.setState({ hydrated: true });
-      });
+    hydrate().catch((err) => {
+      console.error("[App] Hydrate failed:", err);
+      setHydrateError(err instanceof Error ? err : new Error(String(err)));
+      // Let the app continue to the pairing screen even if storage failed.
+      useSessionStore.setState({ hydrated: true });
+    });
   }, [hydrate]);
-
-  if (error) {
-    return <ErrorBoundary error={error} />;
-  }
 
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        <Stack screenOptions={{ headerShown: false }} />
+        <ErrorBoundary>
+          {hydrateError ? (
+            <ErrorView title="⚠️ Error loading app" error={hydrateError} />
+          ) : (
+            <Stack screenOptions={{ headerShown: false }} />
+          )}
+        </ErrorBoundary>
       </QueryClientProvider>
     </SafeAreaProvider>
   );
@@ -50,25 +73,25 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   errorContainer: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
+    flexGrow: 1,
+    backgroundColor: "#0b1220",
     padding: 20,
-    justifyContent: "center",
+    paddingTop: 60,
   },
   errorTitle: {
     fontSize: 18,
     fontWeight: "bold",
-    color: "#d32f2f",
-    marginBottom: 10,
+    color: "#ff8a8a",
+    marginBottom: 12,
   },
   errorText: {
     fontSize: 14,
-    color: "#666",
-    marginBottom: 10,
+    color: "#d9e2f2",
+    marginBottom: 12,
   },
   errorStack: {
     fontSize: 11,
-    color: "#999",
+    color: "#7d8aa5",
     fontFamily: "monospace",
   },
 });
