@@ -7,11 +7,14 @@ LANLink ships **two desktop binaries**, both built from the same Go source:
 
 | Binary | Purpose | Web UI |
 |--------|---------|--------|
+| `lanlink` / `lanlink.exe` | Pure-Go terminal app: `receive`, `send`, `pair`, … — runs directly as `./lanlink receive` | none (zero `agent-web` dependency) |
 | `lanlink-<os>-<arch>` | Runs a receiver **and** serves the dashboard, opening the browser on start | embeds `agent-web` (Windows `.exe` carries the app icon) |
-| `lanlink-cmd-<os>-<arch>` | Pure-Go terminal app: `receive`, `send`, `pair`, … | none (zero `agent-web` dependency) |
 
-Use `lanlink-…` when you want the browser dashboard, and `lanlink-cmd-…` for a
-headless / scriptable / minimal terminal install.
+Use `lanlink` / `lanlink.exe` for a headless / scriptable / minimal terminal
+install, and `lanlink-<os>-<arch>` when you want the browser dashboard. The
+terminal build is named without an `<os>-<arch>` suffix (amd64) so a downloaded
+binary runs as `./lanlink` with no renaming; arm64 terminal builds are suffixed
+`lanlink-arm64[.exe]`.
 
 ## Prerequisites
 
@@ -33,10 +36,10 @@ scripts/build-release.sh
 This writes to `./release/`:
 
 ```
+lanlink                        # terminal build (linux/amd64) — runs as ./lanlink
+lanlink.exe                    # terminal build (windows/amd64)
 lanlink-linux-amd64            # web build (opens the dashboard)
 lanlink-windows-amd64.exe      # web build (opens the dashboard)
-lanlink-cmd-linux-amd64        # terminal build
-lanlink-cmd-windows-amd64.exe  # terminal build
 ```
 
 Options:
@@ -55,7 +58,15 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
   -o release/lanlink-windows-amd64.exe ./agent
 ```
 
-Terminal build — swap `./agent` for `./cmd/lanlink` and name the output `lanlink-cmd-…`.
+Terminal build — swap `./agent` for `./cmd/lanlink` and name the output `lanlink`
+(`lanlink.exe` on Windows):
+
+```bash
+CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
+  -o release/lanlink ./cmd/lanlink
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
+  -o release/lanlink.exe ./cmd/lanlink
+```
 
 ### App icon (Windows)
 
@@ -73,9 +84,12 @@ done
 
 ## Android app (APK)
 
-The mobile app is a managed Expo app (Expo-Go / managed-workflow safe, no custom
-native modules). The icon, splash, package id (`com.lanlink.app`), version, and
-EAS `projectId` are configured in `mobile/app.json`.
+The mobile app uses the Expo prebuild workflow: it ships local native modules
+(`modules/lanlink-uploader` for fast Android uploads, `modules/lanlink-share` for
+the Android share sheet) and a config plugin (`plugins/withShareIntent.js`), so it
+requires a dev/EAS build rather than Expo Go. The icon, splash, package id
+(`com.lanlink.app`), version, and EAS `projectId` are configured in
+`mobile/app.json`.
 
 ### EAS cloud build (recommended)
 
@@ -108,10 +122,11 @@ cd android
 
 After building, sanity-check the artifacts:
 
-1. `./release/lanlink-cmd-linux-amd64 receive` — starts a receiver, prints a
+1. `./release/lanlink receive` — starts a receiver, prints a
    pairing token + QR in the terminal.
-2. `./release/lanlink-cmd-linux-amd64 pair <host:port> <token>` then
-   `send <host:port> <file>` — uploads a file; confirm it lands in the output folder.
+2. `./release/lanlink pair <host:port> <token>` then
+   `./release/lanlink send <host:port> <file>` — uploads a file; confirm it lands
+   in the output folder.
 3. `./release/lanlink-linux-amd64` — opens `http://127.0.0.1:8787/ui` in the
    browser; confirm the dashboard loads, QR renders, the folder browser works,
    and a transfer shows live progress.
@@ -120,10 +135,11 @@ After building, sanity-check the artifacts:
 
 ## Files to attach to a release
 
+- `lanlink`, `lanlink.exe` (terminal build)
 - `lanlink-linux-amd64`, `lanlink-windows-amd64.exe` (web build)
-- `lanlink-cmd-linux-amd64`, `lanlink-cmd-windows-amd64.exe` (terminal build)
 - `lanlink.apk` (from EAS)
-- (optional) `lanlink-linux-arm64`, `lanlink-windows-arm64.exe`, plus their `lanlink-cmd-…` variants
+- (optional) `lanlink-arm64`, `lanlink-arm64.exe` (terminal), plus
+  `lanlink-linux-arm64`, `lanlink-windows-arm64.exe` (web)
 
 ## Notes
 

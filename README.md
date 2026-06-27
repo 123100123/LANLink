@@ -11,7 +11,7 @@ mobile hotspot — no cloud, no accounts.
 
 | Component | What it is |
 |-----------|------------|
-| **`lanlink`** | The unified, **pure-Go terminal binary**. Runs a receiver (`lanlink receive`) and sends files (`lanlink send`). Has **zero dependency on the web UI or mobile app**. |
+| **`lanlink`** | The unified, **pure-Go terminal binary** (ships as `lanlink` / `lanlink.exe`). Runs a receiver (`lanlink receive`) and sends files (`lanlink send`). Has **zero dependency on the web UI or mobile app**. |
 | **dashboard build** (`./agent` → `lanlink-<os>-<arch>`) | The same receiver **plus the browser dashboard** at `/ui`. The only build that embeds `agent-web`. |
 | **legacy CLI** (`./cli`) | The original terminal client, preserved for reference; superseded by `lanlink` above. |
 | **Mobile app** (`mobile/`) | Expo / React Native app for Android & iOS: QR or address+token pairing, file upload queue with progress/speed/ETA. |
@@ -66,10 +66,29 @@ go build -o bin/agent   ./agent         # dashboard build
 Cross-platform release binaries (Linux + Windows, pure Go):
 
 ```bash
-scripts/build-release.sh                # → release/lanlink-<os>-<arch> (dashboard) + lanlink-cmd-<os>-<arch> (terminal)
+scripts/build-release.sh                # → release/lanlink[.exe] (terminal) + lanlink-<os>-<arch> (dashboard)
 ```
 
 See [`docs/release.md`](docs/release.md) for Windows executables and the Android APK / EAS path.
+
+### Download & run (terminal binary)
+
+The terminal build ships as a single executable named `lanlink` (Linux) /
+`lanlink.exe` (Windows), so it runs directly:
+
+```bash
+# Linux: make it executable once, then run
+chmod +x lanlink
+./lanlink receive
+./lanlink pair 192.168.1.42:8787 123456
+./lanlink send 192.168.1.42:8787 ./big.zip
+```
+
+```powershell
+# Windows
+.\lanlink.exe receive
+.\lanlink.exe send 192.168.1.42:8787 .\big.zip
+```
 
 ## Configuration
 
@@ -99,4 +118,4 @@ are **loopback-only** and never exposed to LAN clients.
 
 ## Version
 
-`v1.0.0` · MIT License
+`v1.1.0` · MIT License
