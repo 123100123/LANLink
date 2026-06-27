@@ -133,5 +133,7 @@ Expo Router app under `mobile/`:
   must never import `agent-web` (enforce with `go list -deps ./cmd/lanlink`).
 - Keep reusable logic in `internal/`; keep `main` packages thin.
 - Dashboard frontend stays vanilla (no framework/build step).
-- Mobile ships a local Expo native module (`modules/lanlink-uploader`) for fast
-  Android uploads; running it needs a dev/EAS build (not Expo Go).
+- Mobile ships local Expo native modules — `modules/lanlink-uploader` for fast
+  Android uploads and `modules/lanlink-share` for the Android share sheet (with
+  the `plugins/withShareIntent.js` config plugin); running them needs a dev/EAS
+  build (not Expo Go).

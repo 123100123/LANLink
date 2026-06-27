@@ -36,9 +36,19 @@ eas build -p android --profile production   # store app bundle
 from a native Android OkHttp client, bypassing React Native's networking layer
 (which throttles uploads). See its [README](modules/lanlink-uploader/README.md).
 
+## Share sheet (Android)
+
+`modules/lanlink-share/` makes LANLink appear in the Android system share sheet:
+share a file from any app ("Share → LANLink") and it's sent to the currently
+paired receiver (or queued until you pair). The intent filters are registered by
+the local config plugin `plugins/withShareIntent.js`. Like the uploader, this
+needs a development/EAS build. See its [README](modules/lanlink-share/README.md).
+
 ## Layout
 
 - `app/` — screens and navigation (Expo Router)
-- `src/lib/` — transfer manager, API/socket clients, protocol, storage
+- `src/lib/` — transfer manager, API/socket clients, protocol, storage, share intake
 - `src/store/` — Zustand state (session, transfers)
 - `modules/lanlink-uploader/` — native Android streaming uploader
+- `modules/lanlink-share/` — native Android share-sheet receiver
+- `plugins/withShareIntent.js` — config plugin that registers the share intent filters

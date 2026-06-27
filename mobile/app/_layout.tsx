@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 
 import { useSessionStore } from "@/store/sessionStore";
+import { useShareIntent } from "@/lib/share/useShareIntent";
 
 const queryClient = new QueryClient();
 
@@ -46,6 +47,9 @@ class ErrorBoundary extends React.Component<
 export default function RootLayout() {
   const [hydrateError, setHydrateError] = useState<Error | null>(null);
   const hydrate = useSessionStore((state) => state.hydrate);
+
+  // Route files arriving from the Android system share sheet into the queue.
+  useShareIntent();
 
   useEffect(() => {
     hydrate().catch((err) => {
