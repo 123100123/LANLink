@@ -15,10 +15,13 @@ All notable changes to LANLink are documented here. The format is based on
   plugin that registers the intent filters.
 
 ### Desktop
-- **Terminal binary ships as `lanlink` / `lanlink.exe`** (no `<os>-<arch>` suffix
-  on amd64), so a downloaded binary runs directly as `./lanlink receive` /
-  `./lanlink send` on Linux and Windows. arm64 terminal builds are suffixed
-  `lanlink-arm64`. The web/dashboard build keeps its `lanlink-<os>-<arch>` name.
+- **Two clearly named builds: `lanlink` (cmd) and `lanlinkAgent` (receiver UI).**
+  - The terminal/cmd binary ships as `lanlink` / `lanlink.exe` (no `<os>-<arch>`
+    suffix on amd64), so a downloaded binary runs directly as `./lanlink receive`
+    / `./lanlink send` on Linux and Windows. arm64 cmd builds are suffixed
+    `lanlink-arm64`.
+  - The receiver-UI build (receiver + browser dashboard at `/ui`) is now named
+    `lanlinkAgent-<os>-<arch>` (was `lanlink-<os>-<arch>`).
 
 ## [1.0.0] — 2026-06-26
 

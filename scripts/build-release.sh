@@ -3,14 +3,16 @@
 # Build LANLink desktop release binaries.
 #
 # Produces pure-Go (CGO disabled) cross-platform executables under ./release:
-#   - lanlink[.exe]                  the terminal build: receive/send/pair
-#                                    entirely in the terminal (no web UI), so it
-#                                    runs directly as ./lanlink receive. arm64
-#                                    builds get an -arm64 suffix.
-#   - lanlink-<os>-<arch>[.exe]      the web build: runs a receiver AND serves
-#                                    the dashboard, opening the browser on start
+#   - lanlink[.exe]                       the terminal (cmd) build: receive/send/
+#                                         pair entirely in the terminal (no web
+#                                         UI), so it runs directly as
+#                                         ./lanlink receive. arm64 builds get an
+#                                         -arm64 suffix.
+#   - lanlinkAgent-<os>-<arch>[.exe]      the receiver-UI build: runs a receiver
+#                                         AND serves the dashboard at /ui,
+#                                         opening the browser on start
 #
-# The terminal build (./cmd/lanlink) has zero dependency on agent-web; the web
+# The terminal build (./cmd/lanlink) has zero dependency on agent-web; the agent
 # build (./agent) embeds the dashboard and carries the app icon on Windows.
 #
 # Usage:
@@ -40,10 +42,10 @@ build() {
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "-s -w" \
     -o "$OUT/$term$ext" ./cmd/lanlink
 
-  # Web/dashboard build keeps the descriptive <os>-<arch> name.
-  echo "  lanlink (web)      $goos/$goarch -> lanlink-$goos-$goarch$ext"
+  # Receiver-UI (dashboard) build keeps the descriptive <os>-<arch> name.
+  echo "  lanlinkAgent (ui)  $goos/$goarch -> lanlinkAgent-$goos-$goarch$ext"
   GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags "-s -w" \
-    -o "$OUT/lanlink-$goos-$goarch$ext" ./agent
+    -o "$OUT/lanlinkAgent-$goos-$goarch$ext" ./agent
 }
 
 echo "Building LANLink $VERSION release binaries…"

@@ -7,11 +7,11 @@ LANLink ships **two desktop binaries**, both built from the same Go source:
 
 | Binary | Purpose | Web UI |
 |--------|---------|--------|
-| `lanlink` / `lanlink.exe` | Pure-Go terminal app: `receive`, `send`, `pair`, … — runs directly as `./lanlink receive` | none (zero `agent-web` dependency) |
-| `lanlink-<os>-<arch>` | Runs a receiver **and** serves the dashboard, opening the browser on start | embeds `agent-web` (Windows `.exe` carries the app icon) |
+| `lanlink` / `lanlink.exe` (cmd) | Pure-Go terminal app: `receive`, `send`, `pair`, … — runs directly as `./lanlink receive` | none (zero `agent-web` dependency) |
+| `lanlinkAgent-<os>-<arch>` (receiver UI) | Runs a receiver **and** serves the dashboard at `/ui`, opening the browser on start | embeds `agent-web` (Windows `.exe` carries the app icon) |
 
 Use `lanlink` / `lanlink.exe` for a headless / scriptable / minimal terminal
-install, and `lanlink-<os>-<arch>` when you want the browser dashboard. The
+install, and `lanlinkAgent-<os>-<arch>` when you want the browser dashboard. The
 terminal build is named without an `<os>-<arch>` suffix (amd64) so a downloaded
 binary runs as `./lanlink` with no renaming; arm64 terminal builds are suffixed
 `lanlink-arm64[.exe]`.
@@ -36,10 +36,10 @@ scripts/build-release.sh
 This writes to `./release/`:
 
 ```
-lanlink                        # terminal build (linux/amd64) — runs as ./lanlink
-lanlink.exe                    # terminal build (windows/amd64)
-lanlink-linux-amd64            # web build (opens the dashboard)
-lanlink-windows-amd64.exe      # web build (opens the dashboard)
+lanlink                        # cmd build (linux/amd64) — runs as ./lanlink
+lanlink.exe                    # cmd build (windows/amd64)
+lanlinkAgent-linux-amd64       # receiver-UI build (opens the dashboard)
+lanlinkAgent-windows-amd64.exe # receiver-UI build (opens the dashboard)
 ```
 
 Options:
@@ -49,17 +49,17 @@ Options:
 
 ### Manual builds
 
-Web build (dashboard) — Linux and Windows:
+Receiver-UI build (dashboard) — Linux and Windows:
 
 ```bash
 CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
-  -o release/lanlink-linux-amd64 ./agent
+  -o release/lanlinkAgent-linux-amd64 ./agent
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
-  -o release/lanlink-windows-amd64.exe ./agent
+  -o release/lanlinkAgent-windows-amd64.exe ./agent
 ```
 
-Terminal build — swap `./agent` for `./cmd/lanlink` and name the output `lanlink`
-(`lanlink.exe` on Windows):
+Terminal (cmd) build — swap `./agent` for `./cmd/lanlink` and name the output
+`lanlink` (`lanlink.exe` on Windows):
 
 ```bash
 CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
@@ -70,7 +70,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" \
 
 ### App icon (Windows)
 
-The web build's Windows `.exe` embeds the LANLink icon via committed `.syso`
+The receiver-UI build's Windows `.exe` embeds the LANLink icon via committed `.syso`
 resource files (`agent/icon_windows_amd64.syso`, `agent/icon_windows_arm64.syso`).
 The terminal build carries no icon, and Linux ELF binaries cannot hold one. To
 regenerate the resources after changing the icon (`assets/icon.ico`):
@@ -127,7 +127,7 @@ After building, sanity-check the artifacts:
 2. `./release/lanlink pair <host:port> <token>` then
    `./release/lanlink send <host:port> <file>` — uploads a file; confirm it lands
    in the output folder.
-3. `./release/lanlink-linux-amd64` — opens `http://127.0.0.1:8787/ui` in the
+3. `./release/lanlinkAgent-linux-amd64` — opens `http://127.0.0.1:8787/ui` in the
    browser; confirm the dashboard loads, QR renders, the folder browser works,
    and a transfer shows live progress.
 4. Install the APK on a phone on the same Wi-Fi; pair by scanning the agent QR
@@ -135,11 +135,11 @@ After building, sanity-check the artifacts:
 
 ## Files to attach to a release
 
-- `lanlink`, `lanlink.exe` (terminal build)
-- `lanlink-linux-amd64`, `lanlink-windows-amd64.exe` (web build)
+- `lanlink`, `lanlink.exe` (cmd build)
+- `lanlinkAgent-linux-amd64`, `lanlinkAgent-windows-amd64.exe` (receiver-UI build)
 - `lanlink.apk` (from EAS)
-- (optional) `lanlink-arm64`, `lanlink-arm64.exe` (terminal), plus
-  `lanlink-linux-arm64`, `lanlink-windows-arm64.exe` (web)
+- (optional) `lanlink-arm64`, `lanlink-arm64.exe` (cmd), plus
+  `lanlinkAgent-linux-arm64`, `lanlinkAgent-windows-arm64.exe` (receiver UI)
 
 ## Notes
 

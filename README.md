@@ -11,8 +11,8 @@ mobile hotspot — no cloud, no accounts.
 
 | Component | What it is |
 |-----------|------------|
-| **`lanlink`** | The unified, **pure-Go terminal binary** (ships as `lanlink` / `lanlink.exe`). Runs a receiver (`lanlink receive`) and sends files (`lanlink send`). Has **zero dependency on the web UI or mobile app**. |
-| **dashboard build** (`./agent` → `lanlink-<os>-<arch>`) | The same receiver **plus the browser dashboard** at `/ui`. The only build that embeds `agent-web`. |
+| **`lanlink`** (cmd) | The unified, **pure-Go terminal binary** (ships as `lanlink` / `lanlink.exe`). Runs a receiver (`lanlink receive`) and sends files (`lanlink send`). Has **zero dependency on the web UI or mobile app**. |
+| **`lanlinkAgent`** (receiver UI) | The same receiver **plus the browser dashboard** at `/ui` (`./agent` → `lanlinkAgent-<os>-<arch>`). The only build that embeds `agent-web`. |
 | **legacy CLI** (`./cli`) | The original terminal client, preserved for reference; superseded by `lanlink` above. |
 | **Mobile app** (`mobile/`) | Expo / React Native app for Android & iOS: QR or address+token pairing, file upload queue with progress/speed/ETA. |
 
@@ -59,14 +59,14 @@ go run ./cmd/lanlink send 192.168.1.42:8787 ./big.zip
 ## Build
 
 ```bash
-go build -o bin/lanlink ./cmd/lanlink   # terminal binary (no agent-web)
-go build -o bin/agent   ./agent         # dashboard build
+go build -o bin/lanlink      ./cmd/lanlink   # terminal (cmd) binary (no agent-web)
+go build -o bin/lanlinkAgent ./agent         # receiver-UI build (dashboard)
 ```
 
 Cross-platform release binaries (Linux + Windows, pure Go):
 
 ```bash
-scripts/build-release.sh                # → release/lanlink[.exe] (terminal) + lanlink-<os>-<arch> (dashboard)
+scripts/build-release.sh                # → release/lanlink[.exe] (cmd) + lanlinkAgent-<os>-<arch> (receiver UI)
 ```
 
 See [`docs/release.md`](docs/release.md) for Windows executables and the Android APK / EAS path.

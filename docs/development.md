@@ -11,8 +11,8 @@ overall design see [`architecture.md`](architecture.md).
 
 ## Layout recap
 
-- `cmd/lanlink` — the unified terminal binary (no web UI)
-- `agent` — the dashboard build (embeds `agent-web`)
+- `cmd/lanlink` — the unified terminal (cmd) binary `lanlink` (no web UI)
+- `agent` — the receiver-UI build `lanlinkAgent` (embeds `agent-web`)
 - `internal/agentserver` — the pure-Go receiver core (shared by both)
 - `internal/client`, `internal/transfer` — shared logic
 - `cli` — the preserved original CLI
@@ -22,8 +22,8 @@ overall design see [`architecture.md`](architecture.md).
 
 ```bash
 # Build both binaries
-go build -o bin/lanlink ./cmd/lanlink
-go build -o bin/agent   ./agent
+go build -o bin/lanlink      ./cmd/lanlink   # cmd
+go build -o bin/lanlinkAgent ./agent         # receiver UI
 
 # Run a headless receiver (terminal QR + progress)
 go run ./cmd/lanlink receive
@@ -80,7 +80,7 @@ LANLINK_PORT=8810 LANLINK_RECEIVED_DIR=$(mktemp -d) ./bin/lanlink receive &
 ./bin/lanlink send 127.0.0.1:8810 ./somefile
 ```
 
-For the dashboard, run `./bin/agent`, open `http://127.0.0.1:8787/ui`, and check:
+For the dashboard, run `./bin/lanlinkAgent`, open `http://127.0.0.1:8787/ui`, and check:
 QR renders, folder browser lists/creates dirs, a transfer shows live progress,
 paired-clients list and cancel/unpair work.
 

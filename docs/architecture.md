@@ -21,10 +21,10 @@ The desktop core is a **pure-Go terminal application with zero dependency on
 
 | Binary | Package | Imports `agent-web`? |
 |--------|---------|----------------------|
-| `lanlink` | `cmd/lanlink` | **No** — verified by `go list -deps ./cmd/lanlink` |
-| `lanlink-agent` | `agent` | Yes — it embeds and serves the dashboard |
+| `lanlink` (cmd) | `cmd/lanlink` | **No** — verified by `go list -deps ./cmd/lanlink` |
+| `lanlinkAgent` (receiver UI) | `agent` | Yes — it embeds and serves the dashboard |
 
-`lanlink receive` and `lanlink-agent` run the **same receiver core**
+`lanlink receive` and `lanlinkAgent` run the **same receiver core**
 (`internal/agentserver`); the agent binary just layers the web UI on top via an
 injectable route hook. This keeps the terminal product minimal and lets the
 dashboard evolve independently.
