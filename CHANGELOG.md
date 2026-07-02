@@ -4,6 +4,31 @@ All notable changes to LANLink are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project follows
 [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] — 2026-07-02
+
+### Mobile (Android)
+- **Fixed a black screen on reopening the app.** From the second launch onward
+  the app could open to a blank screen. When Android recreates the activity
+  while the JS process is still alive, expo-router 6 (SDK 54) failed to restore
+  navigation state, leaving an empty navigator over the dark background.
+  Backported the upstream fix ([expo/expo#42644]) via `patch-package`, and
+  hardened the share-intent cold start so a queued share can't crash startup or
+  be replayed from the recents list.
+- **Fixed the receiver online/offline indicator.** The reachability check could
+  hang indefinitely against an unreachable host, leaving the badge stuck on
+  "Checking…". It now times out after 4 seconds and the Send screen re-probes
+  the receiver periodically, so the status reflects reality.
+- **Fixed transfer screen styling.** The live upload percentage was rendered in
+  black (invisible on the dark card) and the action buttons used inconsistent
+  colors. The percentage is now legible and every button follows the shared
+  blue / red / navy palette used across the app.
+
+### Tooling
+- Consolidated on a single lockfile (`yarn.lock`) and removed the stale
+  `package-lock.json`; native patches are applied on install via `patch-package`.
+
+[expo/expo#42644]: https://github.com/expo/expo/pull/42644
+
 ## [1.1.0] — 2026-06-28
 
 ### Mobile (Android)
