@@ -8,7 +8,8 @@
     "android": "node ./scripts/android-launch.cjs",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.1.0",
@@ -36,6 +37,7 @@
     "@types/react": "~19.1.10",
     "@types/react-native": "~0.73.0",
     "babel-preset-expo": "~54.0.10",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.2"
   }
 }

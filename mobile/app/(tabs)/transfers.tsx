@@ -44,18 +44,28 @@ function formatETA(sentBytes: number, totalBytes: number, speed: number) {
   return `${minutes}m${secs}s`;
 }
 
+// The same button palette as the pair and settings screens, so actions read
+// consistently across the app: blue = go, red = stop, navy = neutral.
+const BUTTON_VARIANTS = {
+  primary: "#4f7cff",
+  danger: "#b94d4d",
+  neutral: "#19253d",
+} as const;
+
+type ButtonVariant = keyof typeof BUTTON_VARIANTS;
+
 function ActionButton({
   label,
-  color,
+  variant,
   onPress,
 }: {
   label: string;
-  color: string;
+  variant: ButtonVariant;
   onPress: () => void;
 }) {
   return (
     <Pressable
-      style={[styles.actionButton, { backgroundColor: color }]}
+      style={[styles.actionButton, { backgroundColor: BUTTON_VARIANTS[variant] }]}
       onPress={onPress}
     >
       <Text style={styles.actionText}>{label}</Text>
@@ -104,7 +114,7 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
           <View style={styles.actions}>
             <ActionButton
               label="Cancel"
-              color="#5a2a2a"
+              variant="danger"
               onPress={() => cancelTransfer(transfer.id)}
             />
           </View>
@@ -115,7 +125,7 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
         <View style={styles.actions}>
           <ActionButton
             label="Cancel"
-            color="#5a2a2a"
+            variant="danger"
             onPress={() => cancelTransfer(transfer.id)}
           />
         </View>
@@ -136,7 +146,7 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
           <View style={styles.actions}>
             <ActionButton
               label="Remove"
-              color="#333"
+              variant="neutral"
               onPress={() => removeTransfer(transfer.id)}
             />
           </View>
@@ -151,12 +161,12 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
           <View style={styles.actions}>
             <ActionButton
               label="Retry"
-              color="#1a3a2a"
+              variant="primary"
               onPress={() => retryTransfer(transfer.id)}
             />
             <ActionButton
               label="Remove"
-              color="#333"
+              variant="neutral"
               onPress={() => removeTransfer(transfer.id)}
             />
           </View>
@@ -169,12 +179,12 @@ function TransferCard({ transfer }: { transfer: TransferItem }) {
           <View style={styles.actions}>
             <ActionButton
               label="Retry"
-              color="#1a3a2a"
+              variant="primary"
               onPress={() => retryTransfer(transfer.id)}
             />
             <ActionButton
               label="Remove"
-              color="#333"
+              variant="neutral"
               onPress={() => removeTransfer(transfer.id)}
             />
           </View>
@@ -209,8 +219,10 @@ function statusColor(status: TransferItem["status"]) {
       return { color: "#f0c674" };
     case "waiting":
       return { color: "#9db1d1" };
+    // "uploading" — the live percentage. Without an explicit color it inherited
+    // the default black, which is invisible on the dark card.
     default:
-      return {};
+      return { color: "#4f7cff" };
   }
 }
 
@@ -240,21 +252,21 @@ export default function TransfersScreen() {
           {hasUploadingOrWaiting && (
             <ActionButton
               label="Stop all"
-              color="#5a4a1a"
+              variant="danger"
               onPress={() => stopAll()}
             />
           )}
           {hasFailedOrCancelled && (
             <ActionButton
               label="Start all"
-              color="#1a3a2a"
+              variant="primary"
               onPress={() => startAll()}
             />
           )}
           {hasCompleted && (
             <ActionButton
               label="Clear done"
-              color="#333"
+              variant="neutral"
               onPress={() => clearCompleted()}
             />
           )}

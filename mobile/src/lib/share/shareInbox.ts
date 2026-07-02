@@ -28,11 +28,25 @@ function toQueued(files: SharedFile[]): QueuedFile[] {
     }));
 }
 
+// On a cold start from the share sheet this runs right after hydration, which
+// can be before the root navigator has mounted — navigating then throws, and in
+// a release build that uncaught startup error leaves a dead black screen. Retry
+// a few frames instead of crashing; the files are already queued either way.
+function safeReplace(href: "/(tabs)/transfers" | "/pair", attempt = 0): void {
+  try {
+    router.replace(href);
+  } catch {
+    if (attempt < 20) {
+      setTimeout(() => safeReplace(href, attempt + 1), 50);
+    }
+  }
+}
+
 function sendNow(files: QueuedFile[]): boolean {
   const { credentials, agentAddress } = useSessionStore.getState();
   if (!credentials?.authToken || !agentAddress) return false;
   enqueueFiles(files, agentAddress, credentials.authToken);
-  router.replace("/(tabs)/transfers");
+  safeReplace("/(tabs)/transfers");
   return true;
 }
 
@@ -47,7 +61,7 @@ export function receiveSharedFiles(files: SharedFile[]): void {
 
   if (!sendNow(queued)) {
     pending.push(...queued);
-    router.replace("/pair");
+    safeReplace("/pair");
   }
 }
 

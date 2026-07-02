@@ -1,6 +1,6 @@
 import * as DocumentPicker from "expo-document-picker";
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -15,6 +15,10 @@ import { useSessionStore } from "@/store/sessionStore";
 import { useTransferStore } from "@/store/transferStore";
 
 type Reach = "checking" | "online" | "offline";
+
+// How often the Send screen re-probes the receiver while visible, so the badge
+// tracks the server going up or down instead of freezing on the first result.
+const HEALTH_POLL_MS = 5000;
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -36,18 +40,33 @@ export default function SendScreen() {
 
   const [reach, setReach] = useState<Reach>("checking");
   const [pickStatus, setPickStatus] = useState("");
+  const probeSeq = useRef(0);
 
-  useEffect(() => {
-    if (!agentAddress) return;
-    let alive = true;
-    setReach("checking");
-    checkHealth(agentAddress)
-      .then(() => alive && setReach("online"))
-      .catch(() => alive && setReach("offline"));
-    return () => {
-      alive = false;
-    };
-  }, [agentAddress]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!agentAddress) {
+        setReach("offline");
+        return;
+      }
+      let focused = true;
+      const probe = async () => {
+        const seq = ++probeSeq.current;
+        try {
+          await checkHealth(agentAddress);
+          if (focused && seq === probeSeq.current) setReach("online");
+        } catch {
+          if (focused && seq === probeSeq.current) setReach("offline");
+        }
+      };
+      setReach("checking");
+      probe();
+      const interval = setInterval(probe, HEALTH_POLL_MS);
+      return () => {
+        focused = false;
+        clearInterval(interval);
+      };
+    }, [agentAddress]),
+  );
 
   const active = transfers.filter(
     (t) => t.status === "uploading" || t.status === "waiting",

@@ -11,7 +11,7 @@ export default function Index() {
   if (!hydrated) {
     return (
       <View style={styles.container}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#4f7cff" />
         <Text style={styles.loadingText}>Loading LANLink...</Text>
       </View>
     );
@@ -29,11 +29,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: "#0b1220",
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: "#666",
+    color: "#9db1d1",
   },
 });

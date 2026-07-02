@@ -26,7 +26,13 @@ class LanlinkShareModule : Module() {
     AsyncFunction("getInitialShareIntent") { promise: Promise ->
       val activity = appContext.currentActivity
       val intent = activity?.intent
-      val files = intent?.let { extractSharedFiles(it) } ?: emptyList()
+      // Relaunching from recents re-delivers the ORIGINAL launch intent (the
+      // in-memory action rewrite below doesn't survive process death), which
+      // would replay an old share on every reopen. Android marks those intents.
+      val fromHistory =
+        intent != null && (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+      val files =
+        if (intent != null && !fromHistory) extractSharedFiles(intent) else emptyList()
       if (intent != null && files.isNotEmpty()) {
         // Neutralise the action so the same share isn't picked up twice.
         intent.action = Intent.ACTION_MAIN

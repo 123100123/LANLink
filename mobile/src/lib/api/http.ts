@@ -7,8 +7,26 @@ async function parseJson<T>(response: Response): Promise<T> {
   return data;
 }
 
+// A fetch to a powered-off LAN host can hang for minutes on Android, which left
+// the reachability badge stuck on "Checking…". Cap it so offline is reported fast.
+const HEALTH_TIMEOUT_MS = 4000;
+
 export async function checkHealth(address: string): Promise<HealthResponse> {
-  const response = await fetch(httpUrl(address, "/health"));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(httpUrl(address, "/health"), {
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("Health check timed out");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new Error(`Health check failed (${response.status})`);
   }
